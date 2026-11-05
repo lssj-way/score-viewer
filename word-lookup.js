@@ -15,7 +15,7 @@ const wordLookup=(()=>{
  const find=(k,lyrics)=>{for(const [t,src] of lyrics?[[words,'words']]:[[words,'words'],[terms,'terms']]){const e=t.get(norm(k))||t.get(fold(k));if(e)return {entry:e,src}}return null};
  // Longest matching phrase first, so "poco a poco cresc." becomes two entries.
  function segment(text,lyrics=false){
-  const toks=text.replace(/[—–/]/g,' ').split(/\s+/).filter(t=>/[\p{L}]/u.test(t)),found=[],unknown=[];
+  const toks=text.replace(/[—–/,;:!?¡¿]/g,' ').split(/\s+/).filter(t=>/[\p{L}]/u.test(t)),found=[],unknown=[];
   for(let i=0;i<toks.length;){
    let n=Math.min(6,toks.length-i),hit=null;
    for(;n>0&&!(hit=find(toks.slice(i,i+n).join(' '),lyrics));n--);
