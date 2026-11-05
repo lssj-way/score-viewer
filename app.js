@@ -21,7 +21,7 @@ function fitPaper(){
   paper.style.transform='scale('+scale+')';
   frame.style.height=Math.ceil(paper.offsetHeight*scale)+'px';
  }else{paper.style.transform='none';frame.style.height=''}
- if(scoreXML)$('hint').textContent=fitControl.checked?'横幅全体を表示しています。細部は2本指で拡大できます。声部の再生設定はミキサーで変更できます。':'左右にスクロールして楽譜を確認できます。声部の再生設定はミキサーで変更できます。';
+ if(scoreXML)$('hint').textContent=fitControl.checked?'横幅全体を表示しています。細部は2本指で拡大できます。声部の再生設定はミキサーで変更できます。歌詞や指示をタップすると意味を表示します。':'左右にスクロールして楽譜を確認できます。声部の再生設定はミキサーで変更できます。歌詞や指示をタップすると意味を表示します。';
 }
 async function renderScore(xml){preparePaper();await emptyStaves.render(osmd,xml);resizeAnalysis(xml);fitPaper()}
 fitControl.addEventListener('change',()=>{if(scoreXML)redraw();else{preparePaper();fitPaper()}});
@@ -89,10 +89,10 @@ async function openScore(file){
   await osmd.load(scoreLabels.displayXML(xml));emptyStaves.load(xml);await renderScore(xml);
   scoreXML=xml;scoreFilename=file.name;partMixer.load(xml);setSettings(false);
   $('score-title').textContent=doc.querySelector('work-title, movement-title')?.textContent||file.name;
-  document.title=$('score-title').textContent+' — Score Viewer';
+  document.title=$('score-title').textContent+' — Score Viewer';wordLookup.load($('score-title').textContent,file.name);
   status(file.name+' · '+total+'小節 · 端末内で読み込みました');
   fitPaper();
- }catch(e){scoreXML='';total=0;osmd.clear();status(e.message,true)}
+ }catch(e){scoreXML='';total=0;osmd.clear();wordLookup.load('','');status(e.message,true)}
  finally{busy=false;$('file').disabled=false;$('file').value=''}
 }
 let redrawTimer,rendering=false,redrawPending=false;
