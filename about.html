@@ -1,0 +1,53 @@
+<!doctype html><html lang="ja"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><title>このサイトについて — Score Viewer</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#e9ecef;color:#182330;font:15px/1.7 system-ui}
+header{background:#142b3d;color:#fff;padding:14px 20px}header a{color:#c8e6e3}h1{font-size:18px;margin:6px 0 0}
+main{max-width:760px;margin:0 auto;padding:16px}section{background:#fff;border-radius:8px;box-shadow:0 2px 10px #0001;padding:4px 18px 12px;margin:0 0 14px}
+h2{font-size:16px;margin:14px 0 6px;color:#142b3d}ul,ol{padding-left:1.4em;margin:6px 0}li{margin:3px 0}
+table{border-collapse:collapse;width:100%;font-size:13px}th,td{border-top:1px solid #e1e6ea;padding:6px 4px;text-align:left;vertical-align:top}
+a{color:#185a8c}small{color:#536572}@media(max-width:600px){main{padding:8px}section{padding:2px 12px 10px}}
+</style>
+<header><a href="./">← 楽譜ビューアーに戻る</a><h1>このサイトについて</h1></header>
+<main>
+<section><h2>楽譜とデータの扱い</h2>
+<ul>
+<li>楽譜ファイル（MusicXML）は、お使いの端末のブラウザの中だけで表示・再生します。サーバーには送信せず、このサイトにも保存しません。</li>
+<li>端末に残るのは、声部ミキサーの設定、音色・訳の表示などの設定、読み込んだ曲の単語帳だけです（ブラウザ内の保存領域）。</li>
+<li>アクセス解析や広告はありません。</li>
+</ul></section>
+
+<section><h2>楽譜の権利について</h2>
+<ul>
+<li>読み込む楽譜の著作権・出版社や編曲者の権利は、利用する方ご自身でご確認ください。</li>
+<li>「MP3に保存」で作った音声を公開・配布する場合も、元の楽譜の権利にご注意ください。個人の練習に使う分には、ファイルを外に出さない限り端末内で完結します。</li>
+</ul></section>
+
+<section><h2>試してくださる方へ：使い方</h2>
+<ol>
+<li>「XMLを開く」から楽譜（.xml / .musicxml、非圧縮）を選びます。iPhone・iPadでは「ファイル」アプリ内の楽譜を選べます。</li>
+<li>上部の「▶ 再生」「■ 停止」、テンポ（♩＝）、小節の範囲（「表示」「全曲」）で聴く範囲を決めます。</li>
+<li>「設定」では、声部ミキサー（消音・「このパートだけ聴く」・音量）、休みのパートを隠す表示、音色を変えられます。</li>
+<li>歌詞や楽譜の指示（dolce、cresc. など）をタップすると、日本語と英語の意味が出ます。歌詞の意味は、曲ごとの単語帳（.words.json）を「設定」→「単語の意味」で読み込むと表示されます。</li>
+<li>「MP3に保存」で、表示中の範囲を音声ファイルにできます。</li>
+</ol></section>
+
+<section><h2>感想の伝え方</h2>
+<p>このページを教えてくれた人に、直接お伝えください。次のような点を教えていただけると助かります。</p>
+<ul>
+<li>使った端末とブラウザ（例：iPhone 15・Safari、iPad・Chrome）</li>
+<li>音は出たか（iPhone・iPadは消音スイッチがオンのときも）</li>
+<li>分かりにくかった操作、押しにくかったボタンや文字</li>
+<li>単語の意味の表示は役に立ったか、誤りはなかったか</li>
+<li>止まった・表示が崩れたなどの不具合（どの楽譜で、何をしたときか）</li>
+</ul></section>
+
+<section><h2>使用しているソフトウェアとライセンス</h2>
+<table>
+<tr><th>名称</th><th>ライセンス</th><th>用途</th></tr>
+<tr><td><a href="https://opensheetmusicdisplay.org">OpenSheetMusicDisplay</a> 1.9.2<br><small>Copyright 2019 PhonicScore</small></td><td><a href="vendor/OpenSheetMusicDisplay-LICENSE.txt">BSD-3-Clause</a></td><td>楽譜の表示</td></tr>
+<tr><td>VexFlow・JSZip・pako・loglevel・typescript-collections<br><small>OpenSheetMusicDisplay に同梱</small></td><td>MIT（<a href="vendor/THIRD-PARTY-NOTICES.txt">著作権表示と全文</a>）</td><td>楽譜の描画など</td></tr>
+<tr><td><a href="https://github.com/zhuker/lamejs">lamejs</a> 1.2.1（<a href="https://lame.sourceforge.io/">LAME</a> のJavaScript版）</td><td>LGPL-3.0（<a href="vendor/LGPL-3.0.txt">LGPL</a>・<a href="vendor/GPL-3.0.txt">GPL</a>・<a href="vendor/lamejs-LICENSE.txt">lamejsの説明</a>）</td><td>MP3への変換</td></tr>
+</table>
+<p><small>lamejs は改変せずに別ファイル（vendor/lame-1.2.1.min.js）として使っています。ソースコードは上のリンク先で入手できます。このサイトのその他の部分（画面・再生・単語の意味・音楽用語辞書）は、このサイトの作者が作成したものです。</small></p>
+</section>
+</main></html>

@@ -1,4 +1,4 @@
-/* lamejs 1.2.1, LGPL-3.0; see vendor/lamejs-LICENSE. */
+/* lamejs 1.2.1, LGPL-3.0; see vendor/lamejs-LICENSE.txt. */
 importScripts('vendor/lame-1.2.1.min.js');
 onmessage=({data})=>{
  try{
