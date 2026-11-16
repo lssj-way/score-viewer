@@ -89,7 +89,9 @@ async function playScore(){
   await resumePlaybackAudio();if(token!==generation)return;
   if(audioContext.state!=='running')throw Error('音声を開始できません。再生をもう一度押してください');
   if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;output.connect(analyser);analyser.connect(audioContext.destination);}
-  partMixer.reset();output.gain.setValueAtTime(partMixer.master(),audioContext.currentTime);const origin=audioContext.currentTime+0.08;
+  partMixer.reset();output.gain.setValueAtTime(partMixer.master(),audioContext.currentTime);
+  const countIn=metronome.countIn(timeline,from-1,plan.bpmAt(begin)),origin=audioContext.currentTime+0.08+countIn.seconds;
+  if(countIn.clicks.length){const bus=metronome.bus(audioContext,output,false);for(const c of countIn.clicks)metronome.schedule(audioContext,bus,origin-countIn.seconds+c.t,c.accent)}
   const config=readToneSettings(),partBuses=new Map(),tones=new Map();
   const queue=timeline.notes.filter(n=>n.start<end&&n.start+n.duration>begin);
   const count=queue.length;let next=0,nextClick=0;
@@ -121,6 +123,7 @@ async function playScore(){
    analyser.getFloatTimeDomainData(samples);const peak=Math.max(...samples.map(Math.abs));
    const label=document.getElementById('play-status');label.dataset.audioPeak=Math.max(Number(label.dataset.audioPeak),peak);
    const measure=Math.min(to,timeline.boundaries.findIndex((x,i)=>i>0&&x>beat));
+   if(elapsed<0&&countIn.clicks.length){playbackStatus(`カウント ${Math.max(1,Math.min(countIn.clicks.length,Math.floor((elapsed+countIn.seconds)/countIn.seconds*countIn.clicks.length)+1))} / ${countIn.clicks.length}`);return}
    const bar=Math.max(from,measure),mark=measureLabels.label(bar-1);
    playbackStatus('再生中 · '+bar+'小節'+(mark!==String(bar)?'（'+mark+'）':'')+' · '+Math.max(0,elapsed).toFixed(1)+' / '+span.toFixed(1)+'秒'+(plan.fromScore?tempoNote+Math.round(plan.bpmAt(beat)):tempoNote)+(timeline.hasRepeats?' · 反復なし':''));
    if(elapsed>=span+0.05)stopPlayback('再生が終了しました');
