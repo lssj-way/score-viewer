@@ -98,11 +98,13 @@ const wordLookup=(()=>{
   popup.style.left=Math.max(m,Math.min(innerWidth-w-m,r.left+r.width/2-w/2))+'px';
   popup.style.top=Math.max(m,below?r.bottom+m:r.top-m-h)+'px';
  }
+ // A tap on a word shows its meaning; any other tap on the score is passed on as "score-tap".
  document.addEventListener('click',e=>{
   if(popup?.contains(e.target))return;
-  const frame=$('score-frame');
-  if(!frame.contains(e.target)||!$('word-tap').checked){close();return}
-  const text=target(e.clientX,e.clientY);text?show(text):close();
+  if(!$('score-frame').contains(e.target)){close();return}
+  const text=$('word-tap').checked&&target(e.clientX,e.clientY);
+  if(text){show(text);return}
+  close();document.dispatchEvent(new CustomEvent('score-tap',{detail:{x:e.clientX,y:e.clientY}}));
  });
  // A listener on the frame itself makes SVG text tappable in iOS Safari.
  $('score-frame').addEventListener('click',()=>{});

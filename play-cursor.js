@@ -52,7 +52,27 @@ const playCursor=(()=>{
   if(top===null&&left===null)return;
   lastScroll=performance.now();main.scrollTo({...(top===null?{}:{top}),...(left===null?{}:{left}),behavior:'smooth'});
  }
+ // Bar under a screen point, in the visible renderer.
+ function measureAt(x,y){
+  for(const engine of engines){
+   if(!engine.container?.isConnected||!engine.container.offsetParent)continue;
+   const svgs=engine.container.querySelectorAll('svg');
+   for(const [measure,g] of layout(engine)){
+    const svg=svgs[g.pageIndex],ctm=svg?.getScreenCTM();if(!ctm)continue;
+    const p=new DOMPoint(x,y).matrixTransform(ctm.inverse()),ux=p.x/UNIT,uy=p.y/UNIT;
+    if(ux>=g.x0&&ux<=g.x1&&uy>=g.y0-2&&uy<=g.y1+2)return measure;
+   }
+  }
+  return null;
+ }
+ // Tapping a bar plays from it (and restarts there during playback); the end of the range is kept.
+ document.addEventListener('score-tap',e=>{
+  if(!document.getElementById('tap-play').checked)return;
+  const measure=measureAt(e.detail.x,e.detail.y);if(measure===null)return;
+  const from=document.getElementById('from'),to=document.getElementById('to');
+  from.value=measure+1;if(Number(to.value)<measure+1)to.value=total;measureLabels.sync();playScore();
+ });
  function start(position){stop();const step=()=>{draw(position());frame=requestAnimationFrame(step)};frame=requestAnimationFrame(step)}
  function stop(){cancelAnimationFrame(frame);frame=0;group?.remove();group=null;lastSystem=null}
- return {index,start,stop};
+ return {index,start,stop,measureAt};
 })();

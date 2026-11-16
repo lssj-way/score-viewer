@@ -86,7 +86,7 @@ async function openScore(file){
   status('楽譜を描画しています…');
   total=measures;$('from').value=1;$('to').value=Math.min(8,total);
   $('from').max=$('to').max=total;options();
-  await osmd.load(scoreLabels.displayXML(xml));emptyStaves.load(xml);await renderScore(xml);
+  await osmd.load(scoreLabels.displayXML(xml));emptyStaves.load(xml);measureLabels.load(xml);await renderScore(xml);
   scoreXML=xml;scoreFilename=file.name;partMixer.load(xml);setSettings(false);
   $('score-title').textContent=doc.querySelector('work-title, movement-title')?.textContent||file.name;
   document.title=$('score-title').textContent+' — Score Viewer';wordLookup.load($('score-title').textContent,file.name);
@@ -103,7 +103,7 @@ $('zoom').oninput=redraw;
 $('minus').onclick=()=>{$('zoom').value=Number($('zoom').value)-10;redraw()};
 $('plus').onclick=()=>{$('zoom').value=Number($('zoom').value)+10;redraw()};
 $('range').onclick=redraw;
-$('all').onclick=()=>{stopPlayback();$('from').value=1;$('to').value=total;redraw()};
+$('all').onclick=()=>{stopPlayback();$('from').value=1;$('to').value=total;measureLabels.sync();redraw()};
 
 function setSettings(open){
  $('settings-panel').hidden=!open;

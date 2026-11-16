@@ -61,7 +61,7 @@ const emptyStaves=(()=>{
  async function render(engine,xml){
   const token=++generation,a=Number(document.getElementById('from').value)-1,b=Number(document.getElementById('to').value)-1;
   const host=document.getElementById('score');host.style.display='';document.getElementById('reduced-score')?.remove();
-  apply(engine,parts.map(()=>true));engine.render();wordLookup.index(engine);playCursor.index(engine);
+  apply(engine,parts.map(()=>true));engine.render();measureLabels.apply(engine);wordLookup.index(engine);playCursor.index(engine);
   if(!document.getElementById('hide-empty').checked){document.getElementById('visibility-status').textContent='全声部を表示';return}
   let ranges=[[a,b]];
   if(document.getElementById('hide-mode').value==='system'){
@@ -91,7 +91,7 @@ const emptyStaves=(()=>{
     if(annotations.length){const label=document.createElement('p');label.textContent=[...new Set(annotations)].join(' · ');section.append(label)}
     const renderer=new opensheetmusicdisplay.OpenSheetMusicDisplay(section,{autoResize:false,backend:'svg',drawTitle:start===0,drawSubtitle:false,drawComposer:false,drawMeasureNumbers:true,measureNumberInterval:1,useXMLMeasureNumbers:true,drawPartNames:true,drawPartAbbreviations:true});renderer.setLogLevel('error');
     await renderer.load(displayXML(xml,keep,start>0));if(token!==generation){reduced.remove();return}
-    configure(renderer,start,end,engine.Zoom);apply(renderer,keep);renderer.render();wordLookup.index(renderer);playCursor.index(renderer);
+    configure(renderer,start,end,engine.Zoom);apply(renderer,keep);renderer.render();measureLabels.apply(renderer);wordLookup.index(renderer);playCursor.index(renderer);
     // Keep semantic mapping on the output instead of relying on SVG element order.
     section.dataset.staves=renderer.Sheet.Instruments.filter((p,i)=>keep[i]).reduce((n,p)=>n+p.Staves.length,0);
    }

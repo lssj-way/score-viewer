@@ -116,7 +116,8 @@ async function playScore(){
    analyser.getFloatTimeDomainData(samples);const peak=Math.max(...samples.map(Math.abs));
    const label=document.getElementById('play-status');label.dataset.audioPeak=Math.max(Number(label.dataset.audioPeak),peak);
    const measure=Math.min(to,timeline.boundaries.findIndex((x,i)=>i>0&&x>beat));
-   playbackStatus('再生中 · '+Math.max(from,measure)+'小節 · '+Math.max(0,elapsed).toFixed(1)+' / '+span.toFixed(1)+'秒'+(plan.fromScore?tempoNote+Math.round(plan.bpmAt(beat)):tempoNote)+(timeline.hasRepeats?' · 反復なし':''));
+   const bar=Math.max(from,measure),mark=measureLabels.label(bar-1);
+   playbackStatus('再生中 · '+bar+'小節'+(mark!==String(bar)?'（'+mark+'）':'')+' · '+Math.max(0,elapsed).toFixed(1)+' / '+span.toFixed(1)+'秒'+(plan.fromScore?tempoNote+Math.round(plan.bpmAt(beat)):tempoNote)+(timeline.hasRepeats?' · 反復なし':''));
    if(elapsed>=span+0.05)stopPlayback('再生が終了しました');
   };tick();playTimer=setInterval(tick,80);
  }catch(e){stopPlayback('再生エラー: '+e.message);}
