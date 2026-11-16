@@ -22,16 +22,16 @@ async function exportMP3(){
   if(!scoreXML||busy)throw Error('楽譜の読み込み完了を待ってください');
   const from=Number(document.getElementById('from').value),to=Number(document.getElementById('to').value),bpm=Number(document.getElementById('bpm').value),config=readToneSettings();
   if(!Number.isInteger(from)||!Number.isInteger(to)||from<1||to<from||to>total)throw Error('小節範囲が不正です');
-  if(!Number.isFinite(bpm)||bpm<30||bpm>240)throw Error('テンポは30〜240で指定してください');
-  const filename=`${scoreFilename.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}_-]/gu,'_')}_m${from}-${to}_${config.tone}_${bpm}bpm_${config.center}Hz_${config.boost}dB.mp3`;
+  const timeline=musicTimeline(scoreXML),begin=timeline.boundaries[from-1],end=timeline.boundaries[to],plan=tempoPlan(timeline,bpm),t0=plan.at(begin);
+  if(!plan.fromScore&&(!Number.isFinite(bpm)||bpm<30||bpm>240))throw Error('テンポは30〜240で指定してください');
+  const filename=`${scoreFilename.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}_-]/gu,'_')}_m${from}-${to}_${config.tone}_${plan.fromScore?'score-tempo':bpm+'bpm'}_${config.center}Hz_${config.boost}dB.mp3`;
   let saveHandle;
   if(supportsSavePicker){
    label.textContent='保存先とファイル名を選んでください';
    saveHandle=await window.showSaveFilePicker({id:'allerseelen-mp3',suggestedName:filename,startIn:'music',types:[{description:'MP3音声',accept:{'audio/mpeg':['.mp3']}}]});
   }
   stopPlayback('MP3を書き出しています');
-  const timeline=musicTimeline(scoreXML),begin=timeline.boundaries[from-1],end=timeline.boundaries[to],seconds=60/bpm,sampleRate=44100;
-  const duration=(end-begin)*seconds,lead=0.05,tail=0.15;
+  const sampleRate=44100,duration=plan.at(end)-t0,lead=0.05,tail=0.15;
   label.textContent=`MP3作成中 · ${from}〜${to}小節 · 音声を生成しています…`;
   // Let the progress message paint before scheduling/rendering.
   await new Promise(resolve=>setTimeout(resolve,0));
@@ -41,7 +41,7 @@ async function exportMP3(){
   for(const note of timeline.notes){
    const start=Math.max(begin,note.start),finish=Math.min(end,note.start+note.duration);if(finish<=start)continue;
    if(!partBuses.has(note.part))partBuses.set(note.part,partMixer.bus(context,mix,note.part,false));
-   scheduleTone(context,partBuses.get(note.part),note.midi+(partMixer.tone(note.part)==='piano'?0:config.shift),lead+(start-begin)*seconds,(finish-start)*seconds,partMixer.tone(note.part),config,1,false);
+   scheduleTone(context,partBuses.get(note.part),note.midi+(partMixer.tone(note.part)==='piano'?0:config.shift),lead+plan.at(start)-t0,plan.at(finish)-plan.at(start),partMixer.tone(note.part),config,1,false);
   }
   const rendered=await context.startRendering();
   label.textContent='MP3に変換中 · 0%';

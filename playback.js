@@ -2,7 +2,7 @@
 function musicTimeline(xml) {
  const doc=new DOMParser().parseFromString(xml,'application/xml');
  if(doc.querySelector('parsererror'))throw Error('XMLの構文エラー');
- const parts=[...doc.querySelectorAll('score-partwise > part')], lengths=[], events=[];
+ const parts=[...doc.querySelectorAll('score-partwise > part')], lengths=[], events=[], marks=[];
  for(const [pi,part] of parts.entries()){
   let divisions=1,transpose=0;
   [...part.children].filter(x=>x.tagName==='measure').forEach((measure,mi)=>{
@@ -15,6 +15,8 @@ function musicTimeline(xml) {
      if(el.querySelector('transpose'))transpose=Number(text('transpose > chromatic')||0)+12*Number(text('transpose > octave-change')||0);
     }else if(el.tagName==='backup'||el.tagName==='forward'){
      position+=(el.tagName==='backup'?-1:1)*Number(text('duration')||0)/divisions;max=Math.max(max,position);
+    }else if(el.tagName==='direction'||el.tagName==='sound'){
+     const bpm=tempoOf(el);if(bpm)marks.push({measure:mi,position,bpm});
     }else if(el.tagName==='note'){
      if(el.querySelector('grace'))continue;
      const duration=Number(text('duration')||0)/divisions;
@@ -34,7 +36,29 @@ function musicTimeline(xml) {
  events.forEach(e=>e.start+=boundaries[e.measure]);events.sort((a,b)=>a.start-b.start);
  const notes=[],ties=new Map();
  for(const e of events){const previous=ties.get(e.key);if(e.tieStop&&previous&&Math.abs(previous.start+previous.duration-e.start)<1e-6){previous.duration+=e.duration;if(!e.tieStart)ties.delete(e.key);}else{notes.push(e);if(e.tieStart)ties.set(e.key,e);else ties.delete(e.key);}}
- return {notes,boundaries,hasRepeats:!!doc.querySelector('repeat, ending, sound[ dacapo ], sound[ dalsegno ]')};
+ // Every part usually repeats the same marks; keep one per position.
+ const tempos=[];for(const m of marks.map(m=>({q:boundaries[m.measure]+m.position,bpm:m.bpm})).sort((a,b)=>a.q-b.q))if(!tempos.some(t=>Math.abs(t.q-m.q)<1e-6))tempos.push(m);
+ return {notes,boundaries,tempos,hasRepeats:!!doc.querySelector('repeat, ending, sound[ dacapo ], sound[ dalsegno ]')};
+}
+// Quarter notes per minute from <sound tempo> (already in quarters) or a <metronome> mark.
+function tempoOf(el){
+ const sound=el.tagName==='sound'?el:el.querySelector('sound[tempo]'),tempo=Number(sound?.getAttribute('tempo'));
+ if(tempo>0)return tempo;
+ const metronome=el.tagName==='direction'&&el.querySelector('metronome');if(!metronome)return 0;
+ const unit={whole:4,half:2,quarter:1,eighth:.5,'16th':.25}[metronome.querySelector('beat-unit')?.textContent.trim()];
+ const perMinute=parseFloat((metronome.querySelector('per-minute')?.textContent||'').replace(/[^\d.]/g,''));
+ return unit&&perMinute>0?perMinute*unit*(metronome.querySelector('beat-unit-dot')?1.5:1):0;
+}
+// Seconds at a quarter-note position: the score's tempo marks in "楽譜" mode, otherwise one fixed tempo.
+function tempoPlan(timeline,manual){
+ const marks=document.getElementById('tempo-mode').value==='score'?timeline.tempos.filter(t=>t.bpm>=10&&t.bpm<=400):[];
+ const segments=[{q:0,bpm:marks[0]?.bpm||manual,t:0}];
+ for(const m of marks)if(m.q>0&&m.bpm!==segments.at(-1).bpm){const p=segments.at(-1);segments.push({q:m.q,bpm:m.bpm,t:p.t+(m.q-p.q)*60/p.bpm})}
+ const find=test=>{let found=segments[0];for(const s of segments){if(!test(s))break;found=s}return found};
+ return {fromScore:marks.length>0,
+  at:q=>{const s=find(x=>x.q<=q);return s.t+(q-s.q)*60/s.bpm},
+  beatAt:t=>{const s=find(x=>x.t<=t);return s.q+(t-s.t)*s.bpm/60},
+  bpmAt:q=>find(x=>x.q<=q).bpm};
 }
 let audioContext,output,analyser,playTimer,playing=false,generation=0,sources=new Set();
 function resumePlaybackAudio(){
@@ -46,7 +70,7 @@ function resumePlaybackAudio(){
 }
 function playbackStatus(message){document.getElementById('play-status').textContent=message;}
 function stopPlayback(message='停止しました'){
- generation++;clearInterval(playTimer);playing=false;
+ generation++;clearInterval(playTimer);playing=false;playCursor.stop();
  if(output&&audioContext){output.gain.cancelScheduledValues(audioContext.currentTime);output.gain.setValueAtTime(0,audioContext.currentTime);}
  for(const source of sources){try{source.stop()}catch{}}sources.clear();
  document.getElementById('play').disabled=false;document.getElementById('stop').disabled=true;playbackStatus(message);
@@ -57,8 +81,8 @@ async function playScore(){
   if(!scoreXML||busy)throw Error('楽譜の読み込み完了を待ってください');
   const from=Number(document.getElementById('from').value),to=Number(document.getElementById('to').value),bpm=Number(document.getElementById('bpm').value);
   if(!Number.isInteger(from)||!Number.isInteger(to)||from<1||to<from||to>total)throw Error('小節範囲が不正です');
-  if(!Number.isFinite(bpm)||bpm<30||bpm>240)throw Error('テンポは30〜240で指定してください');
-  const timeline=musicTimeline(scoreXML),begin=timeline.boundaries[from-1],end=timeline.boundaries[to],seconds=60/bpm;
+  const timeline=musicTimeline(scoreXML),begin=timeline.boundaries[from-1],end=timeline.boundaries[to],plan=tempoPlan(timeline,bpm),t0=plan.at(begin),span=plan.at(end)-t0;
+  if(!plan.fromScore&&(!Number.isFinite(bpm)||bpm<30||bpm>240))throw Error('テンポは30〜240で指定してください');
   await resumePlaybackAudio();if(token!==generation)return;
   if(audioContext.state!=='running')throw Error('音声を開始できません。再生をもう一度押してください');
   if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;output.connect(analyser);analyser.connect(audioContext.destination);}
@@ -69,31 +93,45 @@ async function playScore(){
   for(const n of queue)if(!partBuses.has(n.part)){partBuses.set(n.part,partMixer.bus(audioContext,output,n.part,true));tones.set(n.part,partMixer.tone(n.part));}
   const pump=()=>{
    const horizon=audioContext.currentTime+1.5;
-   while(next<queue.length){const note=queue[next],start=Math.max(begin,note.start),finish=Math.min(end,note.start+note.duration),at=origin+(start-begin)*seconds;
+   while(next<queue.length){const note=queue[next],start=Math.max(begin,note.start),finish=Math.min(end,note.start+note.duration),at=origin+plan.at(start)-t0;
     if(at>horizon)break;next++;
-    const actual=Math.max(at,audioContext.currentTime+.005),until=origin+(finish-begin)*seconds;
+    const actual=Math.max(at,audioContext.currentTime+.005),until=origin+plan.at(finish)-t0;
     if(until<=actual)continue;
     const tone=tones.get(note.part);
     scheduleTone(audioContext,partBuses.get(note.part),note.midi+(tone==='piano'?0:config.shift),actual,until-actual,tone,config,1);
    }
   };pump();
   playing=true;document.getElementById('play').disabled=true;document.getElementById('stop').disabled=false;
+  playCursor.start(()=>{
+   const q=Math.min(end-1e-6,plan.beatAt(t0+Math.max(0,audioContext.currentTime-origin)));let m=from-1;
+   while(m+1<to&&timeline.boundaries[m+1]<=q)m++;
+   return {measure:m,offset:q-timeline.boundaries[m],length:timeline.boundaries[m+1]-timeline.boundaries[m]};
+  });
+  const tempoNote=document.getElementById('tempo-mode').value!=='score'?'':plan.fromScore?' · ♩＝':' · 楽譜にテンポ指定がないため♩＝'+bpm;
   document.getElementById('play-status').dataset.noteCount=count;document.getElementById('play-status').dataset.audioPeak='0';
   const samples=new Float32Array(analyser.fftSize);
   const tick=()=>{
    pump();document.getElementById('play-status').dataset.activeSources=sources.size;
-   const elapsed=audioContext.currentTime-origin,beat=begin+Math.max(0,elapsed)/seconds;
+   const elapsed=audioContext.currentTime-origin,beat=plan.beatAt(t0+Math.max(0,elapsed));
    analyser.getFloatTimeDomainData(samples);const peak=Math.max(...samples.map(Math.abs));
    const label=document.getElementById('play-status');label.dataset.audioPeak=Math.max(Number(label.dataset.audioPeak),peak);
    const measure=Math.min(to,timeline.boundaries.findIndex((x,i)=>i>0&&x>beat));
-   playbackStatus('再生中 · '+Math.max(from,measure)+'小節 · '+Math.max(0,elapsed).toFixed(1)+' / '+((end-begin)*seconds).toFixed(1)+'秒'+(timeline.hasRepeats?' · 反復なし':''));
-   if(elapsed>=(end-begin)*seconds+0.05)stopPlayback('再生が終了しました');
+   playbackStatus('再生中 · '+Math.max(from,measure)+'小節 · '+Math.max(0,elapsed).toFixed(1)+' / '+span.toFixed(1)+'秒'+(plan.fromScore?tempoNote+Math.round(plan.bpmAt(beat)):tempoNote)+(timeline.hasRepeats?' · 反復なし':''));
+   if(elapsed>=span+0.05)stopPlayback('再生が終了しました');
   };tick();playTimer=setInterval(tick,80);
  }catch(e){stopPlayback('再生エラー: '+e.message);}
 }
 document.getElementById('play').onclick=playScore;document.getElementById('stop').onclick=()=>stopPlayback();
-for(const id of ['vocal-shift','from','to','bpm','vocal-tone','formant-center','formant-gain','piano-level'])document.getElementById(id).addEventListener('change',()=>{if(playing)stopPlayback('範囲・テンポを変更したため停止しました')});
+for(const id of ['vocal-shift','from','to','bpm','tempo-mode','vocal-tone','formant-center','formant-gain','piano-level'])document.getElementById(id).addEventListener('change',()=>{if(playing)stopPlayback('範囲・テンポを変更したため停止しました')});
 window.addEventListener('pagehide',()=>stopPlayback());
+{
+ const mode=document.getElementById('tempo-mode'),input=document.getElementById('bpm');
+ const apply=()=>{const score=mode.value==='score';input.disabled=score;input.title=score?'楽譜のテンポ指定に従います（指定がない楽譜ではこの値）':'';
+  playbackStatus(score?'楽譜のテンポ指定に従って再生します':'♩＝の速さで再生します')};
+ try{const v=localStorage.getItem('score-viewer-tempo-mode');if(v==='score'||v==='manual')mode.value=v}catch{}
+ mode.addEventListener('change',()=>{try{localStorage.setItem('score-viewer-tempo-mode',mode.value)}catch{}apply()});
+ apply();
+}
 
 // Local additive synthesis. Spectral emphasis is fixed in Hz, not tied to a
 // harmonic number; amplitude normalization makes comparisons less loudness-led.
