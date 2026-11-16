@@ -2,9 +2,9 @@
 function musicTimeline(xml) {
  const doc=new DOMParser().parseFromString(xml,'application/xml');
  if(doc.querySelector('parsererror'))throw Error('XMLの構文エラー');
- const parts=[...doc.querySelectorAll('score-partwise > part')], lengths=[], events=[], marks=[];
+ const parts=[...doc.querySelectorAll('score-partwise > part')], lengths=[], events=[], marks=[], meters=[];
  for(const [pi,part] of parts.entries()){
-  let divisions=1,transpose=0;
+  let divisions=1,transpose=0,meter={beats:4,beatType:4};
   [...part.children].filter(x=>x.tagName==='measure').forEach((measure,mi)=>{
    let position=0,lastStart=0,max=0;
    for(const el of measure.children){
@@ -12,6 +12,9 @@ function musicTimeline(xml) {
     if(el.tagName==='attributes'){
      divisions=Number(text('divisions')||divisions);
      if(!(divisions>0))throw Error('divisionsが不正です');
+     const time=el.querySelector('time beats')?.parentNode;
+     // Additive metres such as 3+2 add up; the metronome only needs the total.
+     if(time)meter={beats:time.querySelector('beats').textContent.split('+').reduce((a,b)=>a+Number(b),0),beatType:Number(time.querySelector('beat-type')?.textContent)||4};
      if(el.querySelector('transpose'))transpose=Number(text('transpose > chromatic')||0)+12*Number(text('transpose > octave-change')||0);
     }else if(el.tagName==='backup'||el.tagName==='forward'){
      position+=(el.tagName==='backup'?-1:1)*Number(text('duration')||0)/divisions;max=Math.max(max,position);
@@ -29,7 +32,7 @@ function musicTimeline(xml) {
      }
     }
    }
-   lengths[mi]=Math.max(lengths[mi]||0,max);
+   lengths[mi]=Math.max(lengths[mi]||0,max);if(pi===0)meters[mi]=meter;
   });
  }
  const boundaries=[0];lengths.forEach(d=>boundaries.push(boundaries.at(-1)+d));
@@ -38,7 +41,7 @@ function musicTimeline(xml) {
  for(const e of events){const previous=ties.get(e.key);if(e.tieStop&&previous&&Math.abs(previous.start+previous.duration-e.start)<1e-6){previous.duration+=e.duration;if(!e.tieStart)ties.delete(e.key);}else{notes.push(e);if(e.tieStart)ties.set(e.key,e);else ties.delete(e.key);}}
  // Every part usually repeats the same marks; keep one per position.
  const tempos=[];for(const m of marks.map(m=>({q:boundaries[m.measure]+m.position,bpm:m.bpm})).sort((a,b)=>a.q-b.q))if(!tempos.some(t=>Math.abs(t.q-m.q)<1e-6))tempos.push(m);
- return {notes,boundaries,tempos,hasRepeats:!!doc.querySelector('repeat, ending, sound[ dacapo ], sound[ dalsegno ]')};
+ return {notes,boundaries,tempos,meters,hasRepeats:!!doc.querySelector('repeat, ending, sound[ dacapo ], sound[ dalsegno ]')};
 }
 // Quarter notes per minute from <sound tempo> (already in quarters) or a <metronome> mark.
 function tempoOf(el){
@@ -89,10 +92,12 @@ async function playScore(){
   partMixer.reset();output.gain.setValueAtTime(partMixer.master(),audioContext.currentTime);const origin=audioContext.currentTime+0.08;
   const config=readToneSettings(),partBuses=new Map(),tones=new Map();
   const queue=timeline.notes.filter(n=>n.start<end&&n.start+n.duration>begin);
-  const count=queue.length;let next=0;
+  const count=queue.length;let next=0,nextClick=0;
+  const clicks=metronome.clicks(timeline,begin,end),clickBus=metronome.bus(audioContext,output,true);
   for(const n of queue)if(!partBuses.has(n.part)){partBuses.set(n.part,partMixer.bus(audioContext,output,n.part,true));tones.set(n.part,partMixer.tone(n.part));}
   const pump=()=>{
    const horizon=audioContext.currentTime+1.5;
+   while(nextClick<clicks.length){const c=clicks[nextClick],at=origin+plan.at(c.q)-t0;if(at>horizon)break;nextClick++;if(at>=audioContext.currentTime)metronome.schedule(audioContext,clickBus,at,c.accent)}
    while(next<queue.length){const note=queue[next],start=Math.max(begin,note.start),finish=Math.min(end,note.start+note.duration),at=origin+plan.at(start)-t0;
     if(at>horizon)break;next++;
     const actual=Math.max(at,audioContext.currentTime+.005),until=origin+plan.at(finish)-t0;
@@ -123,7 +128,7 @@ async function playScore(){
  }catch(e){stopPlayback('再生エラー: '+e.message);}
 }
 document.getElementById('play').onclick=playScore;document.getElementById('stop').onclick=()=>stopPlayback();
-for(const id of ['vocal-shift','from','to','bpm','tempo-mode','vocal-tone','formant-center','formant-gain','piano-level'])document.getElementById(id).addEventListener('change',()=>{if(playing)stopPlayback('範囲・テンポを変更したため停止しました')});
+for(const id of ['vocal-shift','from','to','bpm','tempo-mode','click-unit','click-accent','vocal-tone','formant-center','formant-gain','piano-level'])document.getElementById(id).addEventListener('change',()=>{if(playing)stopPlayback('範囲・テンポを変更したため停止しました')});
 window.addEventListener('pagehide',()=>stopPlayback());
 {
  const mode=document.getElementById('tempo-mode'),input=document.getElementById('bpm');

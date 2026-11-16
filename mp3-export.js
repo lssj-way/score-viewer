@@ -24,7 +24,7 @@ async function exportMP3(){
   if(!Number.isInteger(from)||!Number.isInteger(to)||from<1||to<from||to>total)throw Error('小節範囲が不正です');
   const timeline=musicTimeline(scoreXML),begin=timeline.boundaries[from-1],end=timeline.boundaries[to],plan=tempoPlan(timeline,bpm),t0=plan.at(begin);
   if(!plan.fromScore&&(!Number.isFinite(bpm)||bpm<30||bpm>240))throw Error('テンポは30〜240で指定してください');
-  const filename=`${scoreFilename.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}_-]/gu,'_')}_m${from}-${to}_${config.tone}_${plan.fromScore?'score-tempo':bpm+'bpm'}_${config.center}Hz_${config.boost}dB.mp3`;
+  const filename=`${scoreFilename.replace(/\.[^.]+$/, '').replace(/[^\p{L}\p{N}_-]/gu,'_')}_m${from}-${to}_${config.tone}_${plan.fromScore?'score-tempo':bpm+'bpm'}${metronome.enabled()?'_click':''}_${config.center}Hz_${config.boost}dB.mp3`;
   let saveHandle;
   if(supportsSavePicker){
    label.textContent='保存先とファイル名を選んでください';
@@ -43,6 +43,7 @@ async function exportMP3(){
    if(!partBuses.has(note.part))partBuses.set(note.part,partMixer.bus(context,mix,note.part,false));
    scheduleTone(context,partBuses.get(note.part),note.midi+(partMixer.tone(note.part)==='piano'?0:config.shift),lead+plan.at(start)-t0,plan.at(finish)-plan.at(start),partMixer.tone(note.part),config,1,false);
   }
+  if(metronome.enabled()){const clickBus=metronome.bus(context,mix,false);for(const c of metronome.clicks(timeline,begin,end))metronome.schedule(context,clickBus,lead+plan.at(c.q)-t0,c.accent,false)}
   const rendered=await context.startRendering();
   label.textContent='MP3に変換中 · 0%';
   const result=await encodeMP3(rendered.getChannelData(0).slice(),sampleRate,p=>{label.textContent=`MP3に変換中 · ${p}%`});
