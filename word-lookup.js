@@ -54,11 +54,41 @@ const wordLookup=(()=>{
   return best;
  }
  const el=(tag,cls,text)=>{const e=document.createElement(tag);if(cls)e.className=cls;if(text!==undefined)e.textContent=text;return e};
- function describe(item){
+ // Pronunciation with the device's own voices only (localService), so no text leaves the device.
+ // Latin is read with an Italian voice; church Latin is close to Italian pronunciation.
+ const VOICES={female:['Alice','Federica','Paola','Emma','Anna','Petra','Helena','Amélie','Audrey','Aurélie','Marie','Samantha','Karen','Moira','Tessa','Serena','Kate','Kathy','Victoria','Flo','Sandy','Shelley','Grandma'],
+  male:['Luca','Cosimo','Paolo','Markus','Yannick','Martin','Jacques','Thomas','Daniel','Arthur','Oliver','Alex','Aaron','Fred','Ralph','Albert','Tom','Eddy','Reed','Rocko','Grandpa']};
+ const localVoices=()=>'speechSynthesis' in window?speechSynthesis.getVoices().filter(v=>v.localService):[];
+ if('speechSynthesis' in window)speechSynthesis.getVoices();  // starts loading the voice list
+ // "Markus (Enhanced)", "Markus（拡張）" (Japanese UI) and "Eddy (German (Germany))" all reduce to the first word.
+ const baseName=v=>v.name.split(/\s*[(（]/)[0].trim();
+ function pickVoice(list,lang,gender){
+  const code=lang==='la'?'it':lang||'it',mine=list.filter(v=>v.lang.toLowerCase().replace('_','-').startsWith(code));
+  const best=names=>mine.filter(v=>names.includes(baseName(v))).sort((a,b)=>names.indexOf(baseName(a))-names.indexOf(baseName(b)))[0];
+  return {code,voice:best(VOICES[gender])||best(VOICES[gender==='male'?'female':'male'])||mine[0]||null};
+ }
+ async function speak(text,lang,gender,note){
+  if(!('speechSynthesis' in window)){note.textContent='このブラウザーは音声読み上げに対応していません';return}
+  let list=localVoices();
+  if(!list.length){await new Promise(r=>{speechSynthesis.addEventListener('voiceschanged',r,{once:true});setTimeout(r,1500)});list=localVoices()}
+  const {code,voice}=pickVoice(list,lang,gender);
+  if(!voice){note.textContent=`この端末に${LANGS[code]||code}の音声がありません（端末の設定で追加できます）`;return}
+  speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.voice=voice;u.lang=voice.lang;u.rate=Number($('voice-rate').value)||1;speechSynthesis.speak(u);
+  const matched=VOICES[gender].includes(baseName(voice));
+  note.textContent=`声：${voice.name}${matched?'':`（${gender==='male'?'男性':'女性'}の声がないため）`}${lang==='la'?' · ラテン語はイタリア語の声で読みます':''}`;
+ }
+ function speakButtons(text,lang){
+  const box=el('div','word-speak'),note=el('small','word-voice');
+  for(const [gender,label] of [['female','▶ 女性の声'],['male','▶ 男性の声']]){const b=el('button','',label);b.type='button';b.onclick=()=>speak(text,lang,gender,note);box.append(b)}
+  box.append(note);return box;
+ }
+ const spoken=item=>item.entry.full&&!/\//.test(item.entry.full)?item.entry.full:item.text;
+ function describe(item,lyricLang,speakable){
   const e=item.entry,box=el('div','word-entry'),mode=$('word-lang').value,head=el('div','word-term');
   head.append(el('strong','',item.text));
   const meta=[e.full&&'→ '+e.full,LANGS[e.lang]].filter(Boolean).join('・');if(meta)head.append(el('small','',' '+meta));
   box.append(head);
+  if(speakable)box.append(speakButtons(spoken(item),item.src==='words'?lyricLang:e.lang));
   if(e.lemma&&norm(e.lemma)!==norm(item.text))box.append(el('div','word-sub','原形：'+e.lemma));
   if(e.ipa)box.append(el('div','word-sub','発音：['+e.ipa.replace(/^\[|\]$/g,'')+']'));
   const ja=mode!=='en'&&e.ja,en=mode!=='ja'&&e.en,fallback=!ja&&!en&&(e.ja||e.en);
@@ -84,8 +114,10 @@ const wordLookup=(()=>{
   popup=el('div','');popup.id='word-popup';popup.setAttribute('role','dialog');popup.setAttribute('aria-label','単語の意味');
   const closeButton=el('button','word-close','×');closeButton.setAttribute('aria-label','閉じる');closeButton.onclick=close;
   const head=el('div','word-head');head.append(el('strong','',label));if(detail)head.append(el('small','',' '+detail));
-  popup.append(closeButton,head);
-  for(const item of result.found)popup.append(describe(item));
+  const lyricLang=wordsInfo?.language||'it',first=result.found[0];
+  const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
+  popup.append(closeButton,head,speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
+  for(const item of result.found)popup.append(describe(item,lyricLang,result.found.length>1));
   if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+result.unknown.join(' ')));
   if(!wordsInfo&&lyric)popup.append(el('div','word-hint','歌詞の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
   const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
@@ -118,7 +150,7 @@ const wordLookup=(()=>{
  }
  function useWords(json,name){
   if(!json||typeof json.entries!=='object'||Array.isArray(json.entries))throw Error('単語帳の形式ではありません（entries がありません）');
-  words=table(json.entries);wordsInfo={title:json.title||name,count:Object.keys(json.entries).length};
+  words=table(json.entries);wordsInfo={title:json.title||name,count:Object.keys(json.entries).length,language:typeof json.language==='string'?json.language.toLowerCase().slice(0,2):''};
  }
  function load(title,filename){
   close();words=new Map();wordsInfo=null;storeKey=title||filename?'score-viewer-words-v1-'+(title||filename):'';
@@ -136,7 +168,7 @@ const wordLookup=(()=>{
   }catch(err){$('word-status').textContent='単語帳エラー: '+(err instanceof SyntaxError?'JSONとして読めません':err.message)}
  };
  $('word-clear').onclick=()=>{try{localStorage.removeItem(storeKey)}catch{}words=new Map();wordsInfo=null;close();setStatus()};
- for(const [id,key] of [['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang']]){
+ for(const [id,key] of [['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang'],['voice-rate','score-viewer-voice-rate']]){
   const c=$(id),prop=c.type==='checkbox'?'checked':'value';
   try{const v=localStorage.getItem(key);if(v!==null)c[prop]=prop==='checked'?v==='1':v}catch{}
   c.addEventListener('change',()=>{try{localStorage.setItem(key,prop==='checked'?(c.checked?'1':'0'):c.value)}catch{}close()});

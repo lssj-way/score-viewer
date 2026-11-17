@@ -5,12 +5,13 @@ osmd.setLogLevel('error');
 // Scale a stable engraving canvas; account for its scaled height in document flow.
 const fitControl=$('fit-width');
 fitControl.checked=window.matchMedia('(max-width: 767px)').matches;
-let layoutWidth=0;
+let layoutWidth=0,recentWidths=[];
+const layoutWidthFor=w=>Math.max(720,Math.min(1600,w));
 function preparePaper(){
  const frame=$('score-frame'),paper=$('paper');
  paper.style.transform='none';frame.style.height='';
  layoutWidth=frame.clientWidth;
- paper.style.width=Math.max(720,Math.min(1600,layoutWidth))+'px';
+ paper.style.width=layoutWidthFor(layoutWidth)+'px';recentWidths.push({w:layoutWidth,t:performance.now()});
  paper.style.margin=fitControl.checked?'0':'auto';
 }
 function fitPaper(){
@@ -29,7 +30,13 @@ let resizeFrame;
 new ResizeObserver(()=>{
  cancelAnimationFrame(resizeFrame);
  resizeFrame=requestAnimationFrame(()=>{
-  if(Math.abs($('score-frame').clientWidth-layoutWidth)<1||busy)return;
+  const w=$('score-frame').clientWidth,now=performance.now();
+  if(Math.abs(w-layoutWidth)<1||busy)return;
+  // A scrollbar that appears after a redraw changes the width by ~15 px, and the next redraw can
+  // remove it again: ignore widths drawn moments ago so this cannot loop.
+  recentWidths=recentWidths.filter(r=>now-r.t<3000);if(recentWidths.some(r=>Math.abs(r.w-w)<1))return;
+  // Narrower than 720 px the layout stays 720 px wide and is only rescaled, so no redraw is needed.
+  if(layoutWidthFor(w)===layoutWidthFor(layoutWidth)){layoutWidth=w;recentWidths.push({w,t:now});fitPaper();return}
   if(scoreXML)redraw();else{preparePaper();fitPaper()}
  });
 }).observe($('score-frame'));
