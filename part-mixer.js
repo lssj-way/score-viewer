@@ -1,10 +1,28 @@
 const partMixer=(()=>{
  let rows=[],initial=[],initialMaster=-12,solo=-1,key='',master=0,source='';const buses=new Map();
- const box=document.createElement('fieldset');box.innerHTML='<legend>声部ミキサー</legend><p>再生する声部・伴奏を選択できます。音色変更は次の再生から反映します。</p><select id="mix-preset"><option value="all">全パート</option><option value="choir">合唱のみ</option><option value="choir,piano">合唱＋伴奏</option><option value="solo,piano">独唱＋伴奏</option><option value="none">全消音</option></select> 全体音量 <input id="mix-master" type="range" min="-36" max="0" value="-12"><span id="mix-master-value">−12 dB</span><div id="mix-rows"></div><p><button id="mix-reset" type="button">楽譜の初期値に戻す</button> <button id="mix-export" type="button">この設定を楽譜に保存</button></p><p id="mix-message" role="status"></p>';
+ const box=document.createElement('fieldset');box.innerHTML='<legend>声部ミキサー</legend><p>再生する声部・伴奏を選択できます。楽譜の左の声部名をタップしても、音のオン／オフを切り替えられます（オフは薄く表示）。音色変更は次の再生から反映します。</p><select id="mix-preset"><option value="all">全パート</option><option value="choir">合唱のみ</option><option value="choir,piano">合唱＋伴奏</option><option value="solo,piano">独唱＋伴奏</option><option value="none">全消音</option></select> 全体音量 <input id="mix-master" type="range" min="-36" max="0" value="-12"><span id="mix-master-value">−12 dB</span><div id="mix-rows"></div><p><button id="mix-reset" type="button">楽譜の初期値に戻す</button> <button id="mix-export" type="button">この設定を楽譜に保存</button></p><p id="mix-message" role="status"></p>';
  document.getElementById('vocal-tone').closest('nav').before(box);
- const save=()=>{try{localStorage.setItem(key,JSON.stringify({rows,master}))}catch{};update()};
+ const save=()=>{try{localStorage.setItem(key,JSON.stringify({rows,master}))}catch{};update();paint()};
  const audible=i=>rows[i].on&&(solo<0||solo===i);
  const message=text=>{document.getElementById('mix-message').textContent=text};
+ // Part names at the left of each system toggle that part's sound; muted names are faded.
+ const labelNodes=new Set();
+ function labels(engine){
+  for(const n of labelNodes)if(!n.isConnected)labelNodes.delete(n);
+  const instruments=engine.Sheet.Instruments;
+  for(const page of engine.GraphicSheet?.MusicPages||[])for(const system of page.MusicSystems)system.labels?.forEach((instrument,label)=>{
+   const i=instruments.indexOf(instrument);if(i<0)return;
+   for(const text of label?.SVGNode?.querySelectorAll?.('text')||[]){text.classList.add('part-label');text.dataset.part=i;labelNodes.add(text)}
+  });
+  paint();
+ }
+ function paint(){for(const t of labelNodes){const r=rows[Number(t.dataset.part)];t.style.opacity=r&&!r.on?'.3':''}}
+ document.addEventListener('score-tap',e=>{
+  const {x,y}=e.detail,pad=matchMedia('(pointer: coarse)').matches?14:6;
+  const hit=[...labelNodes].find(t=>{const r=t.getBoundingClientRect();return r.width&&x>=r.left-pad&&x<=r.right+pad&&y>=r.top-pad&&y<=r.bottom+pad});
+  const r=hit&&rows[Number(hit.dataset.part)];if(!r)return;
+  r.on=!r.on;save();draw();message(`${r.name}：音を${r.on?'オン':'オフ'}にしました`);
+ });
  function update(){for(const [i,g] of buses)g.gain.setTargetAtTime(audible(i)?10**(rows[i].db/20):0,g.context.currentTime,.02)}
  // Score defaults, in priority order: score-viewer fields > varied standard MIDI fields > part names.
  const FIELD='score-viewer:part:',MASTER='score-viewer:master',clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
@@ -28,7 +46,7 @@ const partMixer=(()=>{
   return from;
  }
  function load(xml){const d=new DOMParser().parseFromString(xml,'application/xml');let h=2166136261;for(const c of xml)h=Math.imul(h^c.charCodeAt(0),16777619);key='requiem-mixer-v1-'+(h>>>0);solo=-1;buses.clear();const parts=[...d.querySelectorAll('part-list > score-part')];rows=parts.map(p=>{const name=p.querySelector('part-name')?.textContent||p.id;const s=name.toLowerCase();const group=/piano|pianoforte|伴奏/.test(s)?'piano':/solo|solista|独唱/.test(s)?'solo':'choir';const voice=/sopr/.test(s)?'soprano':/alt[oi]|contralt[oi]/.test(s)?'alto':/tenor|tenori/.test(s)?'tenor':/bass|bassi/.test(s)?'bass':null;return {id:p.id,name,group,on:true,db:0,tone:voice?'requiem-'+voice+'-'+(group==='solo'?'solo':'choir'):'piano'}});master=-12;source=scoreDefaults(d,parts);initial=rows.map(r=>({...r}));initialMaster=master;let local=false;try{const s=JSON.parse(localStorage.getItem(key));if(s?.rows?.length===rows.length){rows=rows.map((r,i)=>({...r,...s.rows[i]}));master=s.master??master;local=true}}catch{};draw();message('初期値：'+source+(local?'（この端末で変更した設定を使用中）':''))}
- function draw(){const host=document.getElementById('mix-rows');host.replaceChildren();rows.forEach((r,i)=>{const line=document.createElement('div');line.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0';const check=document.createElement('input');check.type='checkbox';check.checked=r.on;check.onchange=()=>{r.on=check.checked;save()};const label=document.createElement('label');label.append(check,document.createTextNode(r.name+' ['+r.id+']'));const button=document.createElement('button');button.textContent=solo===i?'単独試聴を解除':'このパートだけ聴く';button.onclick=()=>{solo=solo===i?-1:i;update();draw()};const level=document.createElement('input');level.type='range';level.min=-24;level.max=12;level.value=r.db;level.setAttribute('aria-label',r.name+' 音量');const value=document.createElement('span');value.textContent=r.db+' dB';level.oninput=()=>{r.db=Number(level.value);value.textContent=r.db+' dB';save()};const tone=document.getElementById('vocal-tone').cloneNode(true);tone.removeAttribute('id');tone.setAttribute('aria-label',r.name+' 音色');tone.value=r.tone;tone.onchange=()=>{r.tone=tone.value;save()};line.append(label,button,level,value,tone);host.append(line)});document.getElementById('mix-master').value=master;document.getElementById('mix-master-value').textContent=master+' dB'}
+ function draw(){const host=document.getElementById('mix-rows');host.replaceChildren();rows.forEach((r,i)=>{const line=document.createElement('div');line.style.cssText='display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0';const check=document.createElement('input');check.type='checkbox';check.checked=r.on;check.onchange=()=>{r.on=check.checked;save()};const label=document.createElement('label');label.append(check,document.createTextNode(r.name+' ['+r.id+']'));const button=document.createElement('button');button.textContent=solo===i?'単独試聴を解除':'このパートだけ聴く';button.onclick=()=>{solo=solo===i?-1:i;update();draw()};const level=document.createElement('input');level.type='range';level.min=-24;level.max=12;level.value=r.db;level.setAttribute('aria-label',r.name+' 音量');const value=document.createElement('span');value.textContent=r.db+' dB';level.oninput=()=>{r.db=Number(level.value);value.textContent=r.db+' dB';save()};const tone=document.getElementById('vocal-tone').cloneNode(true);tone.removeAttribute('id');tone.setAttribute('aria-label',r.name+' 音色');tone.value=r.tone;tone.onchange=()=>{r.tone=tone.value;save()};line.append(label,button,level,value,tone);host.append(line)});document.getElementById('mix-master').value=master;document.getElementById('mix-master-value').textContent=master+' dB';paint()}
  const applyMaster=()=>{if(output)output.gain.setTargetAtTime(.65*10**(master/20),audioContext.currentTime,.02)};
  document.getElementById('mix-master').oninput=e=>{master=Number(e.target.value);document.getElementById('mix-master-value').textContent=master+' dB';applyMaster();save()};
  document.getElementById('mix-preset').onchange=e=>{solo=-1;rows.forEach(r=>r.on=e.target.value==='all'||e.target.value.split(',').includes(r.group));save();draw()};
@@ -54,5 +72,5 @@ const partMixer=(()=>{
   }else{const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=scoreFilename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),60000);message('ダウンロード先に保存しました。元の楽譜と置き換えると、次からこの設定が初期値になります。')}
  };
  function bus(context,destination,i,live){const g=context.createGain();g.gain.value=audible(i)?10**(rows[i].db/20):0;g.connect(destination);if(live)buses.set(i,g);return g}
- return {load,bus,withSettings,tone:i=>rows[i]?.tone||'piano',master:()=>.65*10**(master/20),reset:()=>buses.clear()};
+ return {load,bus,labels,withSettings,tone:i=>rows[i]?.tone||'piano',master:()=>.65*10**(master/20),reset:()=>buses.clear()};
 })();

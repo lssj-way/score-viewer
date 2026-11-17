@@ -42,7 +42,7 @@ const wordLookup=(()=>{
    lyricNodes.set(node,{entry,nodes});nodes.set(entry,node);
   }
   for(const text of engine.container?.querySelectorAll('svg text')||[])
-   if(lyricNodes.has(text.parentNode)||lookupable(text.textContent))text.classList.add('word-lookup');
+   if(!text.classList.contains('part-label')&&(lyricNodes.has(text.parentNode)||lookupable(text.textContent)))text.classList.add('word-lookup');
  }
  function target(x,y){
   const pad=matchMedia('(pointer: coarse)').matches?14:6;let best=null,bestD=Infinity;
