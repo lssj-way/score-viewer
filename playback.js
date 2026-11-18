@@ -163,6 +163,18 @@ function voicePartials(f0,tone,center,boost,sampleRate=48000){
 }
 function readToneSettings(){return {shift:Number(document.getElementById('vocal-shift').value),tone:document.getElementById('vocal-tone').value,center:Number(document.getElementById('formant-center').value),boost:Number(document.getElementById('formant-gain').value),accompaniment:Number(document.getElementById('piano-level').value)};}
 const periodicWaveCache=new WeakMap();
+// Piano partials. Low notes get flatter, richer spectra: phone and laptop speakers barely
+// reproduce fundamentals below ~200 Hz, so bass lines are heard through their harmonics, as
+// with a real piano. Levels are scaled so a note's loudness through such a speaker roughly
+// matches middle C, with the fundamental capped so headphones do not get boomy bass.
+function pianoPartials(f0){
+ const speaker=f=>f>=200?1:(f/200)**2,t=Math.min(1,Math.max(0,Math.log2(f0/65.4)/2.5)),slope=.75+1.05*t;
+ const count=Math.max(3,Math.min(16,Math.floor(4500/f0))),partials=[];
+ for(let h=1;h<=count;h++)partials.push([h,h**-slope]);
+ const heard=list=>Math.hypot(...list.map(([h,a])=>a*speaker(h*f0)));
+ const reference=Math.hypot(.10,.032,.012),scale=Math.min(.12,reference/heard(partials));
+ return partials.map(([h,a])=>[h,a*scale]);
+}
 function scheduleTone(context,destination,midi,at,duration,tone,config,volume=1,track=true){
  const f0=440*2**((midi-69)/12);
  function connectSource(oscillator,gain){
@@ -172,13 +184,19 @@ function scheduleTone(context,destination,midi,at,duration,tone,config,volume=1,
   oscillator.start(at);oscillator.stop(at+duration+0.012);
  }
  if(tone==='piano'){
-  for(const [harmonic,level] of [[1,0.10],[2,0.032],[3,0.012]]){
-   const oscillator=context.createOscillator(),gain=context.createGain();
-   oscillator.frequency.value=f0*harmonic;
-   gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(level*volume,at+Math.min(0.006,duration/4));
-   gain.gain.exponentialRampToValueAtTime(Math.max(0.000001,level*volume*0.18),at+Math.max(0.01,duration*0.85));gain.gain.linearRampToValueAtTime(0,at+duration);
-   connectSource(oscillator,gain);
+  let cache=periodicWaveCache.get(context);if(!cache){cache=new Map();periodicWaveCache.set(context,cache)}
+  let wave=cache.get('piano/'+midi);
+  if(!wave){
+   const partials=pianoPartials(f0),real=new Float32Array(partials.length+1),imag=new Float32Array(partials.length+1);
+   // Schroeder phases keep the summed waveform's peak low when many harmonics line up.
+   for(const [h,a] of partials){const phase=Math.PI*h*h/partials.length;real[h]=a*Math.sin(phase);imag[h]=a*Math.cos(phase)}
+   wave=context.createPeriodicWave(real,imag,{disableNormalization:true});cache.set('piano/'+midi,wave);
   }
+  const oscillator=context.createOscillator(),gain=context.createGain();
+  oscillator.setPeriodicWave(wave);oscillator.frequency.value=f0;
+  gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(volume,at+Math.min(0.006,duration/4));
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.000001,volume*0.18),at+Math.max(0.01,duration*0.85));gain.gain.linearRampToValueAtTime(0,at+duration);
+  connectSource(oscillator,gain);
  }else{
   let cache=periodicWaveCache.get(context);if(!cache){cache=new Map();periodicWaveCache.set(context,cache)}
   const waveKey=[midi,tone,config.center,config.boost].join('/');let wave=cache.get(waveKey);
