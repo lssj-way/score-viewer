@@ -36,7 +36,7 @@ async function exportMP3(){
   // Let the progress message paint before scheduling/rendering.
   await new Promise(resolve=>setTimeout(resolve,0));
   const context=new OfflineAudioContext(1,Math.ceil((lead+duration+tail)*sampleRate),sampleRate),mix=context.createGain();
-  mix.gain.value=partMixer.master();mix.connect(context.destination);
+  mix.gain.value=partMixer.master();peakLimiter(context,mix).connect(context.destination);
   const partBuses=new Map();
   for(const note of timeline.notes){
    const start=Math.max(begin,note.start),finish=Math.min(end,note.start+note.duration);if(finish<=start)continue;

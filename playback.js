@@ -88,7 +88,7 @@ async function playScore(){
   if(!plan.fromScore&&(!Number.isFinite(bpm)||bpm<30||bpm>240))throw Error('テンポは30〜240で指定してください');
   await resumePlaybackAudio();if(token!==generation)return;
   if(audioContext.state!=='running')throw Error('音声を開始できません。再生をもう一度押してください');
-  if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;output.connect(analyser);analyser.connect(audioContext.destination);}
+  if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;peakLimiter(audioContext,output).connect(analyser);analyser.connect(audioContext.destination);}
   partMixer.reset();output.gain.setValueAtTime(partMixer.master(),audioContext.currentTime);
   const countIn=metronome.countIn(timeline,from-1,plan.bpmAt(begin)),origin=audioContext.currentTime+0.08+countIn.seconds;
   if(countIn.clicks.length){const bus=metronome.bus(audioContext,output,false);for(const c of countIn.clicks)metronome.schedule(audioContext,bus,origin-countIn.seconds+c.t,c.accent)}
@@ -163,6 +163,16 @@ function voicePartials(f0,tone,center,boost,sampleRate=48000){
 }
 function readToneSettings(){return {shift:Number(document.getElementById('vocal-shift').value),tone:document.getElementById('vocal-tone').value,center:Number(document.getElementById('formant-center').value),boost:Number(document.getElementById('formant-gain').value),accompaniment:Number(document.getElementById('piano-level').value)};}
 const periodicWaveCache=new WeakMap();
+// Safety limiter before the speakers (and in MP3 export): it only acts when many parts peak
+// together near full scale, so normal passages are unchanged and dense tutti does not clip.
+function peakLimiter(context,source){
+ const limiter=context.createDynamicsCompressor();
+ limiter.threshold.value=-6;limiter.knee.value=4;limiter.ratio.value=20;limiter.attack.value=.002;limiter.release.value=.2;
+ source.connect(limiter);return limiter;
+}
+// Sung tones are raised 15 dB (from 0.115) so that, at equal mixer settings, one sung line is
+// about as loud as a whole piano part with its chords and bass (measured on Lippen schweigen).
+const SUNG_LEVEL=0.115*10**(15/20);
 // Piano partials. Low notes get flatter, richer spectra: phone and laptop speakers barely
 // reproduce fundamentals below ~200 Hz, so bass lines are heard through their harmonics, as
 // with a real piano. Levels are scaled so a note's loudness through such a speaker roughly
@@ -207,9 +217,9 @@ function scheduleTone(context,destination,midi,at,duration,tone,config,volume=1,
   wave=context.createPeriodicWave(real,imag,{disableNormalization:true});cache.set(waveKey,wave);}
   const oscillator=context.createOscillator(),gain=context.createGain();
   oscillator.setPeriodicWave(wave);oscillator.frequency.value=f0;
-  const attack=Math.min(0.025,duration*0.2),release=Math.min(0.04,duration*0.25);
-  gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(0.115*volume,at+attack);
-  gain.gain.setValueAtTime(0.115*volume,at+duration-release);gain.gain.linearRampToValueAtTime(0,at+duration);
+  const attack=Math.min(0.025,duration*0.2),release=Math.min(0.04,duration*0.25),level=SUNG_LEVEL*volume;
+  gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(level,at+attack);
+  gain.gain.setValueAtTime(level,at+duration-release);gain.gain.linearRampToValueAtTime(0,at+duration);
   connectSource(oscillator,gain);
  }
 }
@@ -218,7 +228,7 @@ async function auditionTone(){
  try{
   await resumePlaybackAudio();if(token!==generation)return;
   if(audioContext.state!=='running')throw Error('音声を開始できません');
-  if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;output.connect(analyser);analyser.connect(audioContext.destination);}
+  if(!output){output=audioContext.createGain();analyser=audioContext.createAnalyser();analyser.fftSize=256;peakLimiter(audioContext,output).connect(analyser);analyser.connect(audioContext.destination);}
   partMixer.reset();output.gain.setValueAtTime(partMixer.master(),audioContext.currentTime);
   const config=readToneSettings();scheduleTone(audioContext,output,57,audioContext.currentTime+0.05,1.5,config.tone,config);
   playing=true;document.getElementById('play').disabled=true;document.getElementById('stop').disabled=false;
