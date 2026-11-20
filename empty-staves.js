@@ -37,8 +37,37 @@ const emptyStaves=(()=>{
  function globalDirection(d){
   return !d.querySelector('words,dynamics,wedge,pedal,octave-shift,dashes,bracket') && !!d.querySelector('metronome,rehearsal,sound[tempo]');
  }
- function displayXML(xml,keep,shortFirst){
+ // Each section has its own renderer, and OSMD drops a hairpin whose start or end lies outside
+ // the drawn range. Hairpins crossing the section edges are cut there: a matching start is added
+ // at the first bar and a stop at the last note of the last bar, so each section draws its part.
+ function splitWedges(copy,start,end){
+  for(const part of copy.querySelectorAll('score-partwise > part')){
+   const measures=[...part.children].filter(m=>m.tagName==='measure'),open=new Map(),spans=[];
+   measures.forEach((m,mi)=>{for(const w of m.querySelectorAll('direction > direction-type > wedge')){
+    const d=w.parentNode.parentNode,staff=d.querySelector(':scope > staff')?.textContent||'1',key=staff+'/'+(w.getAttribute('number')||'1'),type=w.getAttribute('type');
+    if(type==='crescendo'||type==='diminuendo')open.set(key,{type,staff,number:w.getAttribute('number'),placement:d.getAttribute('placement'),from:mi});
+    else if(type==='stop'&&open.has(key)){spans.push({...open.get(key),to:mi});open.delete(key)}
+   }});
+   const direction=(type,span)=>{const d=copy.createElement('direction');if(span.placement)d.setAttribute('placement',span.placement);const t=copy.createElement('direction-type'),w=copy.createElement('wedge');w.setAttribute('type',type);if(span.number)w.setAttribute('number',span.number);t.append(w);d.append(t);const st=copy.createElement('staff');st.textContent=span.staff;d.append(st);return d};
+   for(const span of spans){
+    if(span.from<start&&span.to>=start&&measures[start]){const m=measures[start];m.insertBefore(direction(span.type,span),m.querySelector(':scope > note')||null)}
+    if(span.from<=end&&span.to>end&&span.to>=start&&measures[end]){
+     // Insert before the note that starts last in this staff, so the stop stays inside the bar.
+     const m=measures[end];let divisionsPos=0,lastStart=0,best=null,bestAt=-1;
+     for(const el of m.children){
+      const dur=Number(el.querySelector(':scope > duration')?.textContent||0);
+      if(el.tagName==='backup')divisionsPos-=dur;else if(el.tagName==='forward')divisionsPos+=dur;
+      else if(el.tagName==='note'&&!el.querySelector(':scope > grace')){const chord=!!el.querySelector(':scope > chord'),at=chord?lastStart:divisionsPos;if(!chord){lastStart=at;divisionsPos+=dur}
+       if(!chord&&(el.querySelector(':scope > staff')?.textContent||'1')===span.staff&&at>=bestAt){bestAt=at;best=el}}
+     }
+     m.insertBefore(direction('stop',span),best);
+    }
+   }
+  }
+ }
+ function displayXML(xml,keep,shortFirst,start=0,end=Infinity){
   const copy=new DOMParser().parseFromString(scoreLabels.displayXML(xml,shortFirst),'application/xml');
+  if(start>0||Number.isFinite(end))splitWedges(copy,start,end);
   const ps=[...copy.querySelectorAll('score-partwise > part')];
   const target=ps[keep.findIndex(Boolean)];
   ps.forEach((p,i)=>{if(keep[i])return;[...p.children].forEach((m,mi)=>{
@@ -58,10 +87,21 @@ const emptyStaves=(()=>{
  }
  function apply(engine,keep){engine.Sheet.Instruments.forEach((p,i)=>p.Visible=keep[i]!==false)}
  function configure(e,a,b,zoom){e.EngravingRules.MinMeasureToDrawIndex=a;e.EngravingRules.MaxMeasureToDrawIndex=b;e.EngravingRules.MinMeasureToDrawNumber=0;e.EngravingRules.MaxMeasureToDrawNumber=0;e.Zoom=zoom}
+ // OSMD 1.9.2 skips every tempo word (rit., Allegro, animato…) when the drawn range does not
+ // start at the first bar. The check is lifted for that one step; the words themselves are
+ // still only computed for the bars in range.
+ let patched=false;
+ function patchTempoWords(engine){
+  if(patched)return;const calc=engine.graphic?.calculator;if(!calc)return;
+  let proto=Object.getPrototypeOf(calc);while(proto&&!Object.prototype.hasOwnProperty.call(proto,'calculateTempoExpressionsForMultiTempoExpression'))proto=Object.getPrototypeOf(proto);
+  if(!proto)return;const original=proto.calculateTempoExpressionsForMultiTempoExpression;
+  proto.calculateTempoExpressionsForMultiTempoExpression=function(...args){const min=this.rules.MinMeasureToDrawIndex;this.rules.MinMeasureToDrawIndex=0;try{return original.apply(this,args)}finally{this.rules.MinMeasureToDrawIndex=min}};
+  patched=true;
+ }
  async function render(engine,xml){
   const token=++generation,a=Number(document.getElementById('from').value)-1,b=Number(document.getElementById('to').value)-1;
   const host=document.getElementById('score');host.style.display='';document.getElementById('reduced-score')?.remove();
-  apply(engine,parts.map(()=>true));engine.render();measureLabels.apply(engine);partMixer.labels(engine);wordLookup.index(engine);playCursor.index(engine);
+  apply(engine,parts.map(()=>true));patchTempoWords(engine);engine.render();measureLabels.apply(engine);partMixer.labels(engine);wordLookup.index(engine);playCursor.index(engine);
   if(!document.getElementById('hide-empty').checked){document.getElementById('visibility-status').textContent='全声部を表示';return}
   let ranges=[[a,b]];
   if(document.getElementById('hide-mode').value==='system'){
@@ -90,7 +130,7 @@ const emptyStaves=(()=>{
     })});
     if(annotations.length){const label=document.createElement('p');label.textContent=[...new Set(annotations)].join(' · ');section.append(label)}
     const renderer=new opensheetmusicdisplay.OpenSheetMusicDisplay(section,{autoResize:false,backend:'svg',drawTitle:start===0,drawSubtitle:false,drawComposer:false,drawMeasureNumbers:true,measureNumberInterval:1,useXMLMeasureNumbers:true,drawPartNames:true,drawPartAbbreviations:true});renderer.setLogLevel('error');
-    await renderer.load(displayXML(xml,keep,start>0));if(token!==generation){reduced.remove();return}
+    await renderer.load(displayXML(xml,keep,start>0,start,end));if(token!==generation){reduced.remove();return}
     configure(renderer,start,end,engine.Zoom);apply(renderer,keep);renderer.render();measureLabels.apply(renderer);partMixer.labels(renderer);wordLookup.index(renderer);playCursor.index(renderer);
     // Keep semantic mapping on the output instead of relying on SVG element order.
     section.dataset.staves=renderer.Sheet.Instruments.filter((p,i)=>keep[i]).reduce((n,p)=>n+p.Staves.length,0);
