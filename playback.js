@@ -48,7 +48,7 @@ function tempoOf(el){
  const sound=el.tagName==='sound'?el:el.querySelector('sound[tempo]'),tempo=Number(sound?.getAttribute('tempo'));
  if(tempo>0)return tempo;
  const metronome=el.tagName==='direction'&&el.querySelector('metronome');if(!metronome)return 0;
- const unit={whole:4,half:2,quarter:1,eighth:.5,'16th':.25}[metronome.querySelector('beat-unit')?.textContent.trim()];
+ const unit={whole:4,half:2,quarter:1,eighth:.5,'16th':.25,'32nd':.125,'64th':.0625,breve:8}[metronome.querySelector('beat-unit')?.textContent.trim()];
  const perMinute=parseFloat((metronome.querySelector('per-minute')?.textContent||'').replace(/[^\d.]/g,''));
  return unit&&perMinute>0?perMinute*unit*(metronome.querySelector('beat-unit-dot')?1.5:1):0;
 }

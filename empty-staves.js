@@ -178,7 +178,7 @@ const emptyStaves=(()=>{
     const annotations=[];parts.forEach((p,i)=>{if(keep[i])return;[...p.children].slice(start,end+1).forEach(m=>{
      for(const d of m.querySelectorAll('direction'))if(globalDirection(d)){
       const metro=d.querySelector('metronome'),rehearsal=d.querySelector('rehearsal'),tempo=d.querySelector('sound[tempo]');
-      const text=rehearsal?.textContent||(metro?`${({whole:'𝅝',half:'𝅗𝅥',quarter:'♩',eighth:'♪', '16th':'𝅘𝅥𝅯'})[metro.querySelector('beat-unit')?.textContent]||metro.querySelector('beat-unit')?.textContent||'♩'}${metro.querySelector('beat-unit-dot')?'·':''} = ${metro.querySelector('per-minute')?.textContent||''}`:tempo?`♩ = ${tempo.getAttribute('tempo')}`:'');if(text)annotations.push(text);
+      const text=rehearsal?.textContent||(metro?`${({whole:'𝅝',half:'𝅗𝅥',quarter:'♩',eighth:'♪', '16th':'𝅘𝅥𝅯','32nd':'𝅘𝅥𝅰','64th':'𝅘𝅥𝅱',breve:'𝅜'})[metro.querySelector('beat-unit')?.textContent.trim()]||metro.querySelector('beat-unit')?.textContent.trim()||'♩'}${metro.querySelector('beat-unit-dot')?'·':''} = ${metro.querySelector('per-minute')?.textContent||''}`:tempo?`♩ = ${tempo.getAttribute('tempo')}`:'');if(text)annotations.push(text);
      }
     })});
     if(annotations.length){const label=document.createElement('p');label.textContent=[...new Set(annotations)].join(' · ');section.append(label)}
