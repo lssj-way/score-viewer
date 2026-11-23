@@ -30,11 +30,17 @@ const wordLookup=(()=>{
   return {found,unknown,order};
  }
  // Word-by-word table in text order: the original on top, the English below; it wraps like text.
+ const glossEntry=new WeakMap();
+ // Scroll inside the popup only; the score behind it stays where it is.
+ function scrollPopup(target){popup.scrollTo({top:Math.max(0,target.offsetTop-8),behavior:'smooth'})}
  function gloss(order,lang){
-  const box=el('div','word-gloss');box.setAttribute('role','table');box.setAttribute('aria-label','対応表');
-  const cell=(top,bottom,cls)=>{const c=el('div','word-gloss-cell'+(cls?' '+cls:''));c.setAttribute('role','row');c.append(el('span','word-gloss-src',top),el('span','word-gloss-en',bottom));return c};
-  box.append(cell(LANGS[lang]||'原文','英語','word-gloss-legend'));
-  for(const item of order)box.append(cell(item.text,item.entry?(item.entry.en||item.entry.ja||'—').split(/;\s*/)[0]:'—',item.entry?'':'word-gloss-unknown'));
+  const box=el('div','word-gloss');box.setAttribute('role','group');box.setAttribute('aria-label','対応表（単語を押すと解説へ移動）');
+  const cell=(tag,top,bottom,cls)=>{const c=el(tag,'word-gloss-cell'+(cls?' '+cls:''));c.append(el('span','word-gloss-src',top),el('span','word-gloss-en',bottom));return c};
+  box.append(cell('div',LANGS[lang]||'原文','英語','word-gloss-legend'));
+  for(const item of order){
+   if(!item.entry){box.append(cell('div',item.text,'—','word-gloss-unknown'));continue}
+   const c=cell('button',item.text,(item.entry.en||item.entry.ja||'—').split(/;\s*/)[0]);c.type='button';c.dataset.entry='';glossEntry.set(c,item.entry);box.append(c);
+  }
   return box;
  }
  const chordLike=/^[A-H][♭♯#b]?(m|maj|min|dim|aug|sus|add|ø|°|\+)?[\d()♭♯#b+°ø/A-Hmajsudi]*$/;
@@ -132,9 +138,14 @@ const wordLookup=(()=>{
   const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
   const note=!lyric&&text.classList.contains('note-fold');if(note){popup.classList.add('note-popup');popup.setAttribute('aria-label','ト書き・コメント')}
   popup.append(closeButton,head);if(!note||result.found.length)popup.append(speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
-  if(result.order.length>1&&result.found.length)popup.append(gloss(result.order,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
+  const table=result.order.length>1&&result.found.length?gloss(result.order,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang):null;if(table)popup.append(table);
   // A long stage direction repeats "a", "la"…: each entry is shown once.
-  const shown=new Set();for(const item of result.found){if(shown.has(item.entry))continue;shown.add(item.entry);popup.append(describe(item,lyricLang,result.found.length>1))}
+  const shown=new Map();for(const item of result.found){if(shown.has(item.entry))continue;const box=describe(item,lyricLang,result.found.length>1);shown.set(item.entry,box);popup.append(box)}
+  // A word in the table jumps to its entry below, which flashes; each entry links back to the table.
+  if(table){
+   for(const c of table.querySelectorAll('button.word-gloss-cell'))c.onclick=()=>{const box=shown.get(glossEntry.get(c));if(!box)return;scrollPopup(box);box.classList.remove('word-flash');void box.offsetWidth;box.classList.add('word-flash')};
+   for(const box of shown.values()){const back=el('button','word-back','↑ 表へ戻る');back.type='button';back.onclick=()=>scrollPopup(table);box.querySelector('.word-term').append(back)}
+  }
   if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+[...new Set(result.unknown)].join(' ')));
   if(!wordsInfo&&(lyric||note&&result.unknown.length))popup.append(el('div','word-hint',(lyric?'歌詞':'ト書き')+'の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
   const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
