@@ -35,11 +35,14 @@ const wordLookup=(()=>{
  function scrollPopup(target){popup.scrollTo({top:Math.max(0,target.offsetTop-8),behavior:'smooth'})}
  function gloss(order,lang){
   const box=el('div','word-gloss');box.setAttribute('role','group');box.setAttribute('aria-label','対応表（単語を押すと解説へ移動）');
-  const cell=(tag,top,bottom,cls)=>{const c=el(tag,'word-gloss-cell'+(cls?' '+cls:''));c.append(el('span','word-gloss-src',top),el('span','word-gloss-en',bottom));return c};
-  box.append(cell('div',LANGS[lang]||'原文','英語','word-gloss-legend'));
+  // The translation rows follow the "対応表の訳" setting: English, Japanese or both.
+  const mode=$('gloss-lang').value,rows=mode==='both'?['ja','en']:[mode];
+  const first={en:t=>t.split(/;\s*/)[0],ja:t=>t.split(/[／;；、]/)[0]};
+  const cell=(tag,top,lines,cls)=>{const c=el(tag,'word-gloss-cell'+(cls?' '+cls:''));c.append(el('span','word-gloss-src',top));rows.forEach((r,i)=>c.append(el('span','word-gloss-'+r,lines[i])));return c};
+  box.append(cell('div',LANGS[lang]||'原文',rows.map(r=>r==='ja'?'日本語':'英語'),'word-gloss-legend'));
   for(const item of order){
-   if(!item.entry){box.append(cell('div',item.text,'—','word-gloss-unknown'));continue}
-   const c=cell('button',item.text,(item.entry.en||item.entry.ja||'—').split(/;\s*/)[0]);c.type='button';c.dataset.entry='';glossEntry.set(c,item.entry);box.append(c);
+   if(!item.entry){box.append(cell('div',item.text,rows.map(()=>'—'),'word-gloss-unknown'));continue}
+   const e=item.entry,c=cell('button',item.text,rows.map(r=>{const t=e[r]||e[r==='ja'?'en':'ja'];return t?first[e[r]?r:(r==='ja'?'en':'ja')](t):'—'}));c.type='button';c.dataset.entry='';glossEntry.set(c,item.entry);box.append(c);
   }
   return box;
  }
@@ -196,7 +199,7 @@ const wordLookup=(()=>{
   }catch(err){$('word-status').textContent='単語帳エラー: '+(err instanceof SyntaxError?'JSONとして読めません':err.message)}
  };
  $('word-clear').onclick=()=>{try{localStorage.removeItem(storeKey)}catch{}words=new Map();wordsInfo=null;close();setStatus()};
- for(const [id,key] of [['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang'],['voice-rate','score-viewer-voice-rate']]){
+ for(const [id,key] of [['gloss-lang','score-viewer-gloss-lang'],['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang'],['voice-rate','score-viewer-voice-rate']]){
   const c=$(id),prop=c.type==='checkbox'?'checked':'value';
   try{const v=localStorage.getItem(key);if(v!==null)c[prop]=prop==='checked'?v==='1':v}catch{}
   c.addEventListener('change',()=>{try{localStorage.setItem(key,prop==='checked'?(c.checked?'1':'0'):c.value)}catch{}close()});
