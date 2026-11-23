@@ -10,7 +10,7 @@ const wordLookup=(()=>{
  const norm=s=>s.normalize('NFC').toLowerCase().replace(/[’‘`´]/g,"'").split(/\s+/).map(token).filter(Boolean).join(' ');
  const fold=s=>norm(s).replace(/æ/g,'ae').replace(/œ/g,'oe').normalize('NFD').replace(/\p{M}/gu,'');
  function table(entries){const t=new Map();for(const [k,v] of Object.entries(entries||{})){if(!v||typeof v!=='object')continue;const e={...v,key:k};t.set(norm(k),e);if(!t.has(fold(k)))t.set(fold(k),e)}t.delete('');return t}
- const ready=fetch('music-terms.json').then(r=>r.json()).then(j=>{terms=table(j.entries)}).catch(e=>console.error('music-terms.json',e));
+ const ready=fetch('music-terms.json?v=3').then(r=>r.json()).then(j=>{terms=table(j.entries)}).catch(e=>console.error('music-terms.json',e));
  // Lyrics use only the score's word list; the term list would mislabel e.g. German "in" as Italian.
  const find=(k,lyrics)=>{for(const [t,src] of lyrics?[[words,'words']]:[[words,'words'],[terms,'terms']]){const e=t.get(norm(k))||t.get(fold(k));if(e)return {entry:e,src}}return null};
  // Longest matching phrase first, so "poco a poco cresc." becomes two entries.
@@ -123,9 +123,10 @@ const wordLookup=(()=>{
   const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
   const note=!lyric&&text.classList.contains('note-fold');if(note){popup.classList.add('note-popup');popup.setAttribute('aria-label','ト書き・コメント')}
   popup.append(closeButton,head);if(!note||result.found.length)popup.append(speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
-  for(const item of result.found)popup.append(describe(item,lyricLang,result.found.length>1));
-  if(result.unknown.length&&!note)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+result.unknown.join(' ')));
-  if(!wordsInfo&&lyric)popup.append(el('div','word-hint','歌詞の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
+  // A long stage direction repeats "a", "la"…: each entry is shown once.
+  const shown=new Set();for(const item of result.found){if(shown.has(item.entry))continue;shown.add(item.entry);popup.append(describe(item,lyricLang,result.found.length>1))}
+  if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+[...new Set(result.unknown)].join(' ')));
+  if(!wordsInfo&&(lyric||note&&result.unknown.length))popup.append(el('div','word-hint',(lyric?'歌詞':'ト書き')+'の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
   const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
   popup.append(copy);document.body.append(popup);
   place(text);
