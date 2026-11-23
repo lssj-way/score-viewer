@@ -42,11 +42,13 @@ const wordLookup=(()=>{
    lyricNodes.set(node,{entry,nodes});nodes.set(entry,node);
   }
   for(const text of engine.container?.querySelectorAll('svg text')||[])
-   if(!text.classList.contains('part-label')&&(lyricNodes.has(text.parentNode)||lookupable(text.textContent)))text.classList.add('word-lookup');
+   if(scoreLabels.folded(text.textContent))text.classList.add('word-lookup','note-fold');
+   else if(!text.classList.contains('part-label')&&(lyricNodes.has(text.parentNode)||lookupable(text.textContent)))text.classList.add('word-lookup');
  }
- function target(x,y){
+ // With word lookup off, folded notes still open: their full text is otherwise unreadable.
+ function target(x,y,foldsOnly){
   const pad=matchMedia('(pointer: coarse)').matches?14:6;let best=null,bestD=Infinity;
-  for(const t of document.querySelectorAll('#score-frame text.word-lookup')){
+  for(const t of document.querySelectorAll(foldsOnly?'#score-frame text.note-fold':'#score-frame text.word-lookup')){
    const r=t.getBoundingClientRect();if(!r.width)continue;
    const dx=Math.max(r.left-x,0,x-r.right),dy=Math.max(r.top-y,0,y-r.bottom);if(dx>pad||dy>pad)continue;
    const d=dx*dx+dy*dy;if(d<bestD){best=t;bestD=d}
@@ -109,16 +111,20 @@ const wordLookup=(()=>{
    label=whole;if(syllables.length>1)detail=syllables.map(s=>s.Text).join('-');
    const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[]}:segment(whole,true);
    active=syllables.map(s=>lyric.nodes.get(s)?.querySelector('text')).filter(Boolean);
-  }else{result=segment(label);active=[text]}
+  }else{
+   const full=scoreLabels.folded(label);if(full)label=full;
+   result=full&&!lookupable(full)?{found:[],unknown:[]}:segment(label);active=[text];
+  }
   for(const n of active)n.classList.add('word-active');
   popup=el('div','');popup.id='word-popup';popup.setAttribute('role','dialog');popup.setAttribute('aria-label','単語の意味');
   const closeButton=el('button','word-close','×');closeButton.setAttribute('aria-label','閉じる');closeButton.onclick=close;
   const head=el('div','word-head');head.append(el('strong','',label));if(detail)head.append(el('small','',' '+detail));
   const lyricLang=wordsInfo?.language||'it',first=result.found[0];
   const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
-  popup.append(closeButton,head,speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
+  const note=!lyric&&text.classList.contains('note-fold');if(note){popup.classList.add('note-popup');popup.setAttribute('aria-label','ト書き・コメント')}
+  popup.append(closeButton,head);if(!note||result.found.length)popup.append(speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
   for(const item of result.found)popup.append(describe(item,lyricLang,result.found.length>1));
-  if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+result.unknown.join(' ')));
+  if(result.unknown.length&&!note)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+result.unknown.join(' ')));
   if(!wordsInfo&&lyric)popup.append(el('div','word-hint','歌詞の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
   const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
   popup.append(copy);document.body.append(popup);
@@ -134,7 +140,7 @@ const wordLookup=(()=>{
  document.addEventListener('click',e=>{
   if(popup?.contains(e.target))return;
   if(!$('score-frame').contains(e.target)){close();return}
-  const text=$('word-tap').checked&&target(e.clientX,e.clientY);
+  const text=target(e.clientX,e.clientY,!$('word-tap').checked);
   if(text){show(text);return}
   close();document.dispatchEvent(new CustomEvent('score-tap',{detail:{x:e.clientX,y:e.clientY}}));
  });

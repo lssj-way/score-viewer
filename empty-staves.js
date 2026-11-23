@@ -17,9 +17,35 @@ const scoreLabels=(()=>{
   // Formatted overrides must not introduce labels absent from part-abbreviation.
   d.querySelectorAll('print > part-abbreviation-display').forEach(e=>e.remove());
   if(shortFirst)d.querySelectorAll('print > part-name-display').forEach(e=>e.remove());
+  if(document.getElementById('fold-notes')?.checked)foldNotes(d,xml);
   return new XMLSerializer().serializeToString(d);
  }
- return {displayXML};
+ // Long stage directions and comments become their first words plus "…"; tapping the short
+ // label shows the whole text (word-lookup.js). Tempo words such as "Andante sostenuto" stay.
+ let folded=new Map(),foldedFor=null;
+ const cjk=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u;
+ function long(text){
+  if(cjk.test(text))return text.length>12;
+  return /^[(\[（]/.test(text)?text.length>16:text.length>30;
+ }
+ function shorten(text,words){
+  const open=text.match(/^[(\[（]/)?.[0]||'',close={'(':')','[':']','（':'）'}[open]||'';
+  const body=text.slice(open.length).replace(/[)\]）]$/,'');
+  const head=cjk.test(body)?[...body].slice(0,6+words*2).join(''):body.split(' ').slice(0,1+words).join(' ').replace(/[,;:.]$/,'');
+  return open+head+'…'+close;
+ }
+ function foldNotes(d,xml){
+  if(foldedFor!==xml){folded=new Map();foldedFor=xml}
+  for(const direction of d.querySelectorAll('direction')){
+   if(/^(prelude|minne)-analysis-/.test(direction.id))continue;
+   const words=[...direction.querySelectorAll('direction-type > words')];if(!words.length)continue;
+   const text=words.map(w=>w.textContent).join(' ').replace(/\s+/g,' ').trim();if(!long(text))continue;
+   // Two-word labels, longer when another note starts with the same words.
+   let label;for(let n=1;n<12;n++){label=shorten(text,n);const other=folded.get(label);if(!other||other===text)break}
+   folded.set(label,text);words[0].textContent=label;for(const w of words.slice(1)){const type=w.parentNode;w.remove();if(!type.children.length)type.remove()}
+  }
+ }
+ return {displayXML,folded:label=>folded.get(label.trim())};
 })();
 
 /* Display-only reduction. Every renderer loads the complete original score so that
@@ -42,7 +68,7 @@ const emptyStaves=(()=>{
  // 195-bar score take about 1.5 GB, which iPhone Safari cannot hold.
  let baseCache={xml:null,docs:{}};
  function baseDoc(xml,shortFirst){
-  if(baseCache.xml!==xml)baseCache={xml,docs:{}};
+  const key=xml+(document.getElementById('fold-notes')?.checked?'\u0001':'');if(baseCache.xml!==key)baseCache={xml:key,docs:{}};
   return baseCache.docs[shortFirst]??=new DOMParser().parseFromString(scoreLabels.displayXML(xml,shortFirst),'application/xml');
  }
  const measuresOf=part=>[...part.children].filter(m=>m.tagName==='measure');

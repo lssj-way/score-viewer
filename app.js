@@ -106,6 +106,10 @@ let redrawTimer,rendering=false,redrawPending=false;
 async function redraw(){if(!scoreXML)return;clearTimeout(redrawTimer);redrawTimer=setTimeout(runRedraw,180)}
 async function runRedraw(){if(rendering){redrawPending=true;return}rendering=true;stopPlayback('表示を更新しています');try{options();await renderScore(scoreXML)}catch(e){status(e.message,true)}finally{rendering=false;if(redrawPending){redrawPending=false;redraw()}}}
 $('file').onchange=e=>openScore(e.target.files[0]);
+// Folding changes the XML OSMD reads, so the main renderer reloads it before redrawing.
+{const fold=$('fold-notes');try{const v=localStorage.getItem('score-viewer-fold-notes');if(v!==null)fold.checked=v==='1'}catch{}
+fold.onchange=async()=>{try{localStorage.setItem('score-viewer-fold-notes',fold.checked?'1':'0')}catch{}
+ if(!scoreXML||busy)return;busy=true;stopPlayback('表示を更新しています');try{options();await osmd.load(scoreLabels.displayXML(scoreXML));await renderScore(scoreXML)}catch(e){status(e.message,true)}finally{busy=false}}}
 $('zoom').oninput=redraw;
 $('minus').onclick=()=>{$('zoom').value=Number($('zoom').value)-10;redraw()};
 $('plus').onclick=()=>{$('zoom').value=Number($('zoom').value)+10;redraw()};
