@@ -15,18 +15,27 @@ const wordLookup=(()=>{
  const find=(k,lyrics)=>{for(const [t,src] of lyrics?[[words,'words']]:[[words,'words'],[terms,'terms']]){const e=t.get(norm(k))||t.get(fold(k));if(e)return {entry:e,src}}return null};
  // Longest matching phrase first, so "poco a poco cresc." becomes two entries.
  function segment(text,lyrics=false){
-  const toks=text.replace(/[—–/,;:!?¡¿]/g,' ').split(/\s+/).filter(t=>/[\p{L}]/u.test(t)),found=[],unknown=[];
+  const toks=text.replace(/[—–/,;:!?¡¿]/g,' ').split(/\s+/).filter(t=>/[\p{L}]/u.test(t)),found=[],unknown=[],order=[];
+  const hitAt=item=>{found.push(item);order.push(item)},miss=text=>{if(text){unknown.push(text);order.push({text})}};
   for(let i=0;i<toks.length;){
    let n=Math.min(6,toks.length-i),hit=null;
    for(;n>0&&!(hit=find(toks.slice(i,i+n).join(' '),lyrics));n--);
-   if(hit){found.push({text:toks.slice(i,i+n).map(token).join(' '),...hit});i+=n;continue}
+   if(hit){hitAt({text:toks.slice(i,i+n).map(token).join(' '),...hit});i+=n;continue}
    // Split elisions (dell'atto → dell' + atto) and hyphenated words; no lookbehind for older iOS.
    const parts=toks[i].replace(/['’]/g,"'\n").split(/\n|-/).filter(p=>/[\p{L}]/u.test(p)),sub=parts.length>1?parts.map(p=>({p,h:find(p,lyrics)})):[];
-   if(sub.some(s=>s.h))for(const s of sub)s.h?found.push({text:s.p,...s.h}):unknown.push(token(s.p));
-   else unknown.push(token(toks[i]));
+   if(sub.some(s=>s.h))for(const s of sub)s.h?hitAt({text:s.p,...s.h}):miss(token(s.p));
+   else miss(token(toks[i]));
    i++;
   }
-  return {found,unknown:unknown.filter(Boolean)};
+  return {found,unknown,order};
+ }
+ // Word-by-word table in text order: the original on top, the English below; it wraps like text.
+ function gloss(order,lang){
+  const box=el('div','word-gloss');box.setAttribute('role','table');box.setAttribute('aria-label','対応表');
+  const cell=(top,bottom,cls)=>{const c=el('div','word-gloss-cell'+(cls?' '+cls:''));c.setAttribute('role','row');c.append(el('span','word-gloss-src',top),el('span','word-gloss-en',bottom));return c};
+  box.append(cell(LANGS[lang]||'原文','英語','word-gloss-legend'));
+  for(const item of order)box.append(cell(item.text,item.entry?(item.entry.en||item.entry.ja||'—').split(/;\s*/)[0]:'—',item.entry?'':'word-gloss-unknown'));
+  return box;
  }
  const chordLike=/^[A-H][♭♯#b]?(m|maj|min|dim|aug|sus|add|ø|°|\+)?[\d()♭♯#b+°ø/A-Hmajsudi]*$/;
  const dynamic=/^(p{1,4}|f{1,4}|m[pf]|s?f+z?|sfp|fp|rfz?)$/;
@@ -109,11 +118,11 @@ const wordLookup=(()=>{
   if(lyric){
    const syllables=lyric.entry.Word?.Syllables||[lyric.entry],whole=syllables.map(s=>s.Text).join('');
    label=whole;if(syllables.length>1)detail=syllables.map(s=>s.Text).join('-');
-   const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[]}:segment(whole,true);
+   const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[],order:[]}:segment(whole,true);
    active=syllables.map(s=>lyric.nodes.get(s)?.querySelector('text')).filter(Boolean);
   }else{
    const full=scoreLabels.folded(label);if(full)label=full;
-   result=full&&!lookupable(full)?{found:[],unknown:[]}:segment(label);active=[text];
+   result=full&&!lookupable(full)?{found:[],unknown:[],order:[]}:segment(label);active=[text];
   }
   for(const n of active)n.classList.add('word-active');
   popup=el('div','');popup.id='word-popup';popup.setAttribute('role','dialog');popup.setAttribute('aria-label','単語の意味');
@@ -123,6 +132,7 @@ const wordLookup=(()=>{
   const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
   const note=!lyric&&text.classList.contains('note-fold');if(note){popup.classList.add('note-popup');popup.setAttribute('aria-label','ト書き・コメント')}
   popup.append(closeButton,head);if(!note||result.found.length)popup.append(speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
+  if(result.order.length>1&&result.found.length)popup.append(gloss(result.order,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
   // A long stage direction repeats "a", "la"…: each entry is shown once.
   const shown=new Set();for(const item of result.found){if(shown.has(item.entry))continue;shown.add(item.entry);popup.append(describe(item,lyricLang,result.found.length>1))}
   if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+[...new Set(result.unknown)].join(' ')));
