@@ -17,6 +17,13 @@ const scoreLabels=(()=>{
   // Formatted overrides must not introduce labels absent from part-abbreviation.
   d.querySelectorAll('print > part-abbreviation-display').forEach(e=>e.remove());
   if(shortFirst)d.querySelectorAll('print > part-name-display').forEach(e=>e.remove());
+  // A playback-only tempo (<sound tempo> with no printed mark) made OSMD draw "♩ = 58" on top of
+  // the tempo words; the printed score has no such mark. Playback reads the original XML.
+  for(const direction of d.querySelectorAll('direction')){
+   if(direction.querySelector('metronome'))continue;
+   const shown=[...direction.querySelectorAll('direction-type > *')].some(e=>e.tagName!=='words'||e.textContent.trim());
+   if(!shown&&direction.querySelector('sound[tempo]'))direction.remove();
+  }
   if(document.getElementById('fold-notes')?.checked)foldNotes(d,xml);
   return new XMLSerializer().serializeToString(d);
  }
