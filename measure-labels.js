@@ -32,7 +32,7 @@ const measureLabels=(()=>{
    for(const number of system.MeasureNumberLabels||[]){
     const x=number.PositionAndShape.AbsolutePosition.x;let nearest=null,distance=Infinity;
     for(const m of columns){const d=Math.abs(m.PositionAndShape.AbsolutePosition.x-x);if(d<distance){distance=d;nearest=m}}
-    const i=nearest?source.indexOf(nearest.parentSourceMeasure):-1,text=number.SVGNode?.querySelector?.('text');
+    const i=nearest?source.indexOf(nearest.parentSourceMeasure)+(engine.measureOffset||0):-1,text=number.SVGNode?.querySelector?.('text');
     if(i>=0&&text)text.textContent=shown(i);
    }
   }

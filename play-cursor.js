@@ -10,7 +10,7 @@ const playCursor=(()=>{
   const source=engine.Sheet.SourceMeasures;
   (engine.GraphicSheet?.MusicPages||[]).forEach((page,pageIndex)=>{for(const system of page.MusicSystems)for(const column of system.GraphicalMeasures){
    const staves=[].concat(column).filter(m=>m?.PositionAndShape);if(!staves.length)continue;
-   const measure=source.indexOf(staves[0].parentSourceMeasure);if(measure<0)continue;
+   const found=source.indexOf(staves[0].parentSourceMeasure);if(found<0)continue;const measure=found+(engine.measureOffset||0);
    const box=staves[0].PositionAndShape,x0=box.AbsolutePosition.x,ys=staves.map(m=>m.PositionAndShape.AbsolutePosition.y),points=new Map();
    for(const m of staves)for(const entry of m.staffEntries){const q=entry.relInMeasureTimestamp.RealValue*4,x=entry.PositionAndShape.AbsolutePosition.x;if(!(points.get(q)<=x))points.set(q,x)}
    map.set(measure,{system,pageIndex,x0,x1:x0+box.Size.width,y0:Math.min(...ys)-1.5,y1:Math.max(...ys)+5.5,points:[...points].sort((a,b)=>a[0]-b[0])});
