@@ -5,6 +5,34 @@ const wordLookup=(()=>{
  const LANGS={it:'イタリア語',de:'ドイツ語',fr:'フランス語',en:'英語',la:'ラテン語'};
  let terms=new Map(),words=new Map(),wordsInfo=null,storeKey='',popup=null,active=[];
  const lyricNodes=new WeakMap();
+ // Whole words from the original MusicXML. Hiding empty staves draws each system as its own
+ // slice of bars, so a word that runs over a system break (fa-sci-no | ri-bi-le) is cut there in
+ // OSMD's model. Key: part index|bar index|verse|n-th lyric of that verse in the bar.
+ let sourceWords=new Map();
+ function source(xml){
+  sourceWords=new Map();
+  try{
+   const d=new DOMParser().parseFromString(xml,'application/xml');
+   [...d.querySelectorAll('score-partwise > part')].forEach((part,pi)=>{
+    const open=new Map();
+    [...part.children].filter(e=>e.tagName==='measure').forEach((m,mi)=>{
+     const nth=new Map();
+     for(const n of m.querySelectorAll(':scope > note'))for(const l of n.querySelectorAll(':scope > lyric')){
+      const verse=l.getAttribute('number')||'1',voice=n.querySelector(':scope > voice')?.textContent||'1';
+      const text=[...l.children].filter(e=>e.tagName==='text'||e.tagName==='elision').map(e=>e.textContent).join('');
+      if(!text)continue;
+      const k=nth.get(verse)||0;nth.set(verse,k+1);
+      const syl=l.querySelector(':scope > syllabic')?.textContent||'single',ok=voice+'|'+verse;
+      let word;
+      if(syl==='begin'||!open.has(ok)&&syl!=='single')word=[];else word=syl==='single'?[]:open.get(ok);
+      word.push({text,bar:mi});
+      if(syl==='begin'||syl==='middle')open.set(ok,word);else open.delete(ok);
+      sourceWords.set([pi,mi,verse,k].join('|'),{word,text});
+     }
+    });
+   });
+  }catch(e){console.error('word-lookup source',e)}
+ }
  // Keys are compared lower-cased, without surrounding punctuation; fold() also drops accents.
  const token=s=>s.replace(/^[^\p{L}\p{N}]+/u,'').replace(/[^\p{L}\p{N}'’]+$/u,'');
  const norm=s=>s.normalize('NFC').toLowerCase().replace(/[’‘`´]/g,"'").split(/\s+/).map(token).filter(Boolean).join(' ');
@@ -54,10 +82,21 @@ const wordLookup=(()=>{
   return dynamic.test(text.trim())||toks.some(t=>/\p{L}{2}/u.test(t)&&!chordLike.test(t));
  }
  function index(engine){
-  close();const nodes=new Map();
+  close();const nodes=new Map(),nth=new Map();
+  const sheet=engine.Sheet,offset=engine.measureOffset||0;
   for(const measure of engine.GraphicSheet?.MeasureList.flat()||[])for(const staffEntry of measure?.staffEntries||[])for(const lyric of staffEntry.LyricsEntries||[]){
    const node=lyric.GraphicalLabel?.SVGNode,entry=lyric.LyricsEntry;if(!node||!entry)continue;
-   lyricNodes.set(node,{entry,nodes});nodes.set(entry,node);
+   // Find this syllable in the original MusicXML to recover the whole word.
+   let full=null;
+   const pi=sheet?.Instruments.indexOf(measure.ParentStaff?.ParentInstrument),sm=measure.parentSourceMeasure;
+   const mi=sheet&&sm?sheet.SourceMeasures.indexOf(sm)+offset:-1,verse=String(entry.VerseNumber??'1');
+   if(pi>=0&&mi>=0){
+    const base=[pi,mi,verse].join('|'),k=nth.get(base)||0;nth.set(base,k+1);
+    let hit=sourceWords.get(base+'|'+k);
+    if(!hit||hit.text!==entry.Text)for(let j=0;(hit=sourceWords.get(base+'|'+j));j++)if(hit.text===entry.Text)break;
+    full=hit?.word||null;
+   }
+   lyricNodes.set(node,{entry,nodes,full});nodes.set(entry,node);
   }
   for(const text of engine.container?.querySelectorAll('svg text')||[])
    if(scoreLabels.folded(text.textContent))text.classList.add('word-lookup','note-fold');
@@ -125,8 +164,9 @@ const wordLookup=(()=>{
   await ready;close();
   const lyric=lyricNodes.get(text.parentNode);let label=text.textContent.trim(),detail='',result;
   if(lyric){
-   const syllables=lyric.entry.Word?.Syllables||[lyric.entry],whole=syllables.map(s=>s.Text).join('');
-   label=whole;if(syllables.length>1)detail=syllables.map(s=>s.Text).join('-');
+   const syllables=lyric.entry.Word?.Syllables||[lyric.entry];
+   const parts=lyric.full&&lyric.full.length>=syllables.length?lyric.full.map(s=>s.text):syllables.map(s=>s.Text),whole=parts.join('');
+   label=whole;if(parts.length>1)detail=parts.join('-');
    const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[],order:[]}:segment(whole,true);
    active=syllables.map(s=>lyric.nodes.get(s)?.querySelector('text')).filter(Boolean);
   }else{
@@ -205,5 +245,5 @@ const wordLookup=(()=>{
   c.addEventListener('change',()=>{try{localStorage.setItem(key,prop==='checked'?(c.checked?'1':'0'):c.value)}catch{}close()});
  }
  setStatus();
- return {index,load,lookup:text=>ready.then(()=>segment(text))};
+ return {index,load,source,lookup:text=>ready.then(()=>segment(text))};
 })();

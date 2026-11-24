@@ -93,7 +93,7 @@ async function openScore(file){
   status('楽譜を描画しています…');
   total=measures;$('from').value=1;$('to').value=Math.min(8,total);
   $('from').max=$('to').max=total;options();
-  await osmd.load(scoreLabels.displayXML(xml));emptyStaves.load(xml);measureLabels.load(xml);await renderScore(xml);
+  wordLookup.source(xml);await osmd.load(scoreLabels.displayXML(xml));emptyStaves.load(xml);measureLabels.load(xml);await renderScore(xml);
   scoreXML=xml;scoreFilename=file.name;partMixer.load(xml);setSettings(false);
   $('score-title').textContent=doc.querySelector('work-title, movement-title')?.textContent||file.name;
   document.title=$('score-title').textContent+' — Score Viewer';wordLookup.load($('score-title').textContent,file.name);
