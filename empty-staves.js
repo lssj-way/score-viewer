@@ -24,8 +24,21 @@ const scoreLabels=(()=>{
    const shown=[...direction.querySelectorAll('direction-type > *')].some(e=>e.tagName!=='words'||e.textContent.trim());
    if(!shown&&direction.querySelector('sound[tempo]'))direction.remove();
   }
+  hideTremoloTuplets(d);
   if(document.getElementById('fold-notes')?.checked)foldNotes(d,xml);
   return new XMLSerializer().serializeToString(d);
+ }
+ // A two-note tremolo is written as two notes of the full value, each sounding half of it
+ // (<time-modification> 2:1, as MuseScore exports it). OSMD 1.9.2 spaces such notes at their
+ // written value unless they are in a tuplet, so the rest of the bar was pushed past the barline
+ // (and the play cursor with it). The pair is wrapped in a tuplet that shows neither number nor bracket.
+ function hideTremoloTuplets(d){
+  for(const t of d.querySelectorAll('note > notations > ornaments > tremolo[type="start"], note > notations > ornaments > tremolo[type="stop"]')){
+   const note=t.closest('note'),notations=t.closest('notations');
+   if(note.querySelector(':scope > chord')||!note.querySelector(':scope > time-modification')||notations.querySelector(':scope > tuplet'))continue;
+   const tuplet=d.createElement('tuplet');tuplet.setAttribute('type',t.getAttribute('type'));
+   tuplet.setAttribute('bracket','no');tuplet.setAttribute('show-number','none');notations.prepend(tuplet);
+  }
  }
  // Long stage directions and comments become their first words plus "…"; tapping the short
  // label shows the whole text (word-lookup.js). Tempo words such as "Andante sostenuto" stay.
