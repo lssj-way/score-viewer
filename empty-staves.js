@@ -25,6 +25,7 @@ const scoreLabels=(()=>{
    if(!shown&&direction.querySelector('sound[tempo]'))direction.remove();
   }
   hideTremoloTuplets(d);
+  keepTupletRests(d);
   if(document.getElementById('fold-notes')?.checked)foldNotes(d,xml);
   return new XMLSerializer().serializeToString(d);
  }
@@ -38,6 +39,15 @@ const scoreLabels=(()=>{
    if(note.querySelector(':scope > chord')||!note.querySelector(':scope > time-modification')||notations.querySelector(':scope > tuplet'))continue;
    const tuplet=d.createElement('tuplet');tuplet.setAttribute('type',t.getAttribute('type'));
    tuplet.setAttribute('bracket','no');tuplet.setAttribute('show-number','none');notations.prepend(tuplet);
+  }
+ }
+ // A hidden rest (print-object="no") inside a tuplet gets no VexFlow note, so OSMD builds the
+ // tuplet without it (or drops a one-note tuplet); the remaining notes keep their written length
+ // and run past the barline. Such rests are drawn instead, fully transparent.
+ function keepTupletRests(d){
+  for(const n of d.querySelectorAll('note[print-object="no"]')){
+   if(!n.querySelector(':scope > rest')||!n.querySelector(':scope > time-modification'))continue;
+   n.removeAttribute('print-object');n.setAttribute('color','#FFFFFF00');
   }
  }
  // Long stage directions and comments become their first words plus "…"; tapping the short
