@@ -13,6 +13,7 @@ const wordLookup=(()=>{
   sourceWords=new Map();
   try{
    const d=new DOMParser().parseFromString(xml,'application/xml');
+   const lines=new Map();
    [...d.querySelectorAll('score-partwise > part')].forEach((part,pi)=>{
     const open=new Map();
     [...part.children].filter(e=>e.tagName==='measure').forEach((m,mi)=>{
@@ -25,13 +26,33 @@ const wordLookup=(()=>{
       const syl=l.querySelector(':scope > syllabic')?.textContent||'single',ok=voice+'|'+verse;
       let word;
       if(syl==='begin'||!open.has(ok)&&syl!=='single')word=[];else word=syl==='single'?[]:open.get(ok);
+      if(!word.length){const lk=pi+'|'+ok;if(!lines.has(lk))lines.set(lk,[]);lines.get(lk).push(word)}
       word.push({text,bar:mi});
       if(syl==='begin'||syl==='middle')open.set(ok,word);else open.delete(ok);
-      sourceWords.set([pi,mi,verse,k].join('|'),{word,text});
+      sourceWords.set([pi,mi,verse,k].join('|'),{word,text,pos:word.length-1});
      }
     });
    });
+   // Each chain of syllables knows the words of its whole line (one part, voice and verse), so a
+   // tapped lyric can be shown inside its phrase.
+   for(const chains of lines.values()){
+    const tokens=[];
+    for(const c of chains){c.start=tokens.length;c.line=tokens;tokens.push(...c.map(x=>x.text).join('').split(SPACE).filter(Boolean))}
+   }
   }catch(e){console.error('word-lookup source',e)}
+ }
+ // "lio ad" is one sung syllable from two words; an elision mark (‿) also separates words.
+ const SPACE=/[\s‿]+/,PHRASE_END=/[.;:!?…]["'»”’)\]]*$/,PHRASE_REACH=8;
+ // The phrase around syllable `pos` of a chain: from the last sentence mark (. ; : ! ?) before it
+ // to the next one after it, at most PHRASE_REACH words on each side. Commas do not end a phrase
+ // ("Non piangere," alone says too little).
+ function phraseOf(chain,pos){
+  const tokens=chain.line,i=chain.start+chain.slice(0,pos).map(x=>x.text).join('').split(SPACE).length-1;
+  if(!tokens||!tokens[i])return null;
+  let a=i,b=i;
+  while(a>0&&i-a<PHRASE_REACH&&!PHRASE_END.test(tokens[a-1]))a--;
+  while(b<tokens.length-1&&b-i<PHRASE_REACH&&!PHRASE_END.test(tokens[b]))b++;
+  return {words:tokens.slice(a,b+1),at:i-a};
  }
  // Keys are compared lower-cased, without surrounding punctuation; fold() also drops accents.
  const token=s=>s.replace(/^[^\p{L}\p{N}]+/u,'').replace(/[^\p{L}\p{N}'’]+$/u,'');
@@ -87,16 +108,16 @@ const wordLookup=(()=>{
   for(const measure of engine.GraphicSheet?.MeasureList.flat()||[])for(const staffEntry of measure?.staffEntries||[])for(const lyric of staffEntry.LyricsEntries||[]){
    const node=lyric.GraphicalLabel?.SVGNode,entry=lyric.LyricsEntry;if(!node||!entry)continue;
    // Find this syllable in the original MusicXML to recover the whole word.
-   let full=null;
+   let full=null,pos=0;
    const pi=sheet?.Instruments.indexOf(measure.ParentStaff?.ParentInstrument),sm=measure.parentSourceMeasure;
    const mi=sheet&&sm?sheet.SourceMeasures.indexOf(sm)+offset:-1,verse=String(entry.VerseNumber??'1');
    if(pi>=0&&mi>=0){
     const base=[pi,mi,verse].join('|'),k=nth.get(base)||0;nth.set(base,k+1);
     let hit=sourceWords.get(base+'|'+k);
     if(!hit||hit.text!==entry.Text)for(let j=0;(hit=sourceWords.get(base+'|'+j));j++)if(hit.text===entry.Text)break;
-    full=hit?.word||null;
+    full=hit?.word||null;pos=hit?.pos??0;
    }
-   lyricNodes.set(node,{entry,nodes,full});nodes.set(entry,node);
+   lyricNodes.set(node,{entry,nodes,full,pos});nodes.set(entry,node);
   }
   for(const text of engine.container?.querySelectorAll('svg text')||[])
    if(scoreLabels.folded(text.textContent))text.classList.add('word-lookup','note-fold');
@@ -136,8 +157,8 @@ const wordLookup=(()=>{
   const matched=VOICES[gender].includes(baseName(voice));
   note.textContent=`声：${voice.name}${matched?'':`（${gender==='male'?'男性':'女性'}の声がないため）`}${lang==='la'?' · ラテン語はイタリア語の声で読みます':''}`;
  }
- function speakButtons(text,lang){
-  const box=el('div','word-speak'),note=el('small','word-voice');
+ function speakButtons(text,lang,label){
+  const box=el('div','word-speak'),note=el('small','word-voice');if(label)box.append(el('span','word-speak-label',label));
   for(const [gender,label] of [['female','▶ 女性の声'],['male','▶ 男性の声']]){const b=el('button','',label);b.type='button';b.onclick=()=>speak(text,lang,gender,note);box.append(b)}
   box.append(note);return box;
  }
@@ -162,12 +183,22 @@ const wordLookup=(()=>{
  function close(){popup?.remove();popup=null;for(const n of active)n.classList.remove('word-active');active=[]}
  async function show(text){
   await ready;close();
-  const lyric=lyricNodes.get(text.parentNode);let label=text.textContent.trim(),detail='',result;
+  const lyric=lyricNodes.get(text.parentNode);let label=text.textContent.trim(),detail='',result,phrase=null,tapped='';
   if(lyric){
    const syllables=lyric.entry.Word?.Syllables||[lyric.entry];
    const parts=lyric.full&&lyric.full.length>=syllables.length?lyric.full.map(s=>s.text):syllables.map(s=>s.Text),whole=parts.join('');
    label=whole;if(parts.length>1)detail=parts.join('-');
-   const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[],order:[]}:segment(whole,true);
+   phrase=$('lyric-phrase').checked&&lyric.full?.line?phraseOf(lyric.full,lyric.pos):null;
+   if(phrase&&phrase.words.length>1){
+    // The tapped word heads the popup; its phrase, table and entries follow, the tapped word first.
+    label=token(phrase.words[phrase.at])||phrase.words[phrase.at];tapped=norm(label);
+    result=segment(phrase.words.join(' '),true);
+    const mine=item=>norm(item.text).split(' ').includes(tapped);
+    result.found=[...result.found.filter(mine),...result.found.filter(x=>!mine(x))];
+   }else{
+    phrase=null;
+    const hit=find(whole,true);result=hit?{found:[{text:token(whole),...hit}],unknown:[],order:[]}:segment(whole,true);
+   }
    active=syllables.map(s=>lyric.nodes.get(s)?.querySelector('text')).filter(Boolean);
   }else{
    const full=scoreLabels.folded(label);if(full)label=full;
@@ -180,8 +211,14 @@ const wordLookup=(()=>{
   const lyricLang=wordsInfo?.language||'it',first=result.found[0];
   const speakText=lyric?label.replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim():result.found.map(spoken).join(' ')||label;
   const note=!lyric&&text.classList.contains('note-fold');if(note){popup.classList.add('note-popup');popup.setAttribute('aria-label','ト書き・コメント')}
-  popup.append(closeButton,head);if(!note||result.found.length)popup.append(speakButtons(speakText,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang));
-  const table=result.order.length>1&&result.found.length?gloss(result.order,lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang):null;if(table)popup.append(table);
+  const speakLang=lyric||first?.src==='words'?lyricLang:first?.entry.lang||lyricLang;
+  popup.append(closeButton,head);
+  if(phrase){
+   const line=el('div','word-phrase');phrase.words.forEach((w,i)=>{if(i)line.append(' ');line.append(i===phrase.at?el('b','',w):w)});popup.append(line);
+   popup.append(speakButtons(speakText,speakLang,'単語'),speakButtons(phrase.words.join(' ').replace(/[^\p{L}\p{N}'’ -]+/gu,' ').trim(),speakLang,'フレーズ'));
+  }else if(!note||result.found.length)popup.append(speakButtons(speakText,speakLang));
+  const table=result.order.length>1&&result.found.length?gloss(result.order,speakLang):null;if(table)popup.append(table);
+  if(table&&tapped)for(const c of table.querySelectorAll('.word-gloss-cell:not(.word-gloss-legend)'))if(norm(c.querySelector('.word-gloss-src').textContent).split(' ').includes(tapped))c.classList.add('word-gloss-here');
   // A long stage direction repeats "a", "la"…: each entry is shown once.
   const shown=new Map();for(const item of result.found){if(shown.has(item.entry))continue;const box=describe(item,lyricLang,result.found.length>1);shown.set(item.entry,box);popup.append(box)}
   // A word in the table jumps to its entry below, which flashes; each entry links back to the table.
@@ -191,7 +228,7 @@ const wordLookup=(()=>{
   }
   if(result.unknown.length)popup.append(el('div','word-unknown',(result.found.length?'未登録：':'辞書・単語帳に未登録です：')+[...new Set(result.unknown)].join(' ')));
   if(!wordsInfo&&(lyric||note&&result.unknown.length))popup.append(el('div','word-hint',(lyric?'歌詞':'ト書き')+'の意味は「設定」→「単語の意味」から曲の単語帳を読み込むと表示されます。'));
-  const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
+  const copy=el('button','word-copy','原文をコピー');copy.onclick=async()=>{try{await navigator.clipboard.writeText(phrase?phrase.words.join(' '):label);copy.textContent='コピーしました'}catch{copy.textContent='コピーできませんでした'}};
   popup.append(copy);document.body.append(popup);
   place(text);
  }
@@ -239,7 +276,7 @@ const wordLookup=(()=>{
   }catch(err){$('word-status').textContent='単語帳エラー: '+(err instanceof SyntaxError?'JSONとして読めません':err.message)}
  };
  $('word-clear').onclick=()=>{try{localStorage.removeItem(storeKey)}catch{}words=new Map();wordsInfo=null;close();setStatus()};
- for(const [id,key] of [['gloss-lang','score-viewer-gloss-lang'],['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang'],['voice-rate','score-viewer-voice-rate']]){
+ for(const [id,key] of [['lyric-phrase','score-viewer-lyric-phrase'],['gloss-lang','score-viewer-gloss-lang'],['word-tap','score-viewer-word-tap'],['word-lang','score-viewer-word-lang'],['voice-rate','score-viewer-voice-rate']]){
   const c=$(id),prop=c.type==='checkbox'?'checked':'value';
   try{const v=localStorage.getItem(key);if(v!==null)c[prop]=prop==='checked'?v==='1':v}catch{}
   c.addEventListener('change',()=>{try{localStorage.setItem(key,prop==='checked'?(c.checked?'1':'0'):c.value)}catch{}close()});
